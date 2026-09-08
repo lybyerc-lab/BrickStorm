@@ -1,9 +1,14 @@
+# @brickstorm.system construction
+# @brickstorm.role Shared molded-plastic, glass, rubber, and metal palette for classic brick-game readability.
+# @brickstorm.scope runtime
+# @brickstorm.risk medium
+# @brickstorm.contract brick_palette,material_roles
+# @brickstorm.north_star classic_lego_mobile
+# @brickstorm.owner openai/brickstorm
+
 class_name BrickPalette
 extends RefCounted
 
-# Saturated molded-plastic colors. No logos, copied textures, or proprietary
-# assets are used. Readability comes from color blocking, seams, shine, studs,
-# transparent inserts, and recognizable construction silhouettes.
 const RED: Color = Color(0.72, 0.055, 0.045)
 const DARK_RED: Color = Color(0.42, 0.035, 0.035)
 const BLUE: Color = Color(0.035, 0.30, 0.67)
