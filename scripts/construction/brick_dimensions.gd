@@ -1,9 +1,17 @@
+# @brickstorm.system construction
+# @brickstorm.role Canonical stud/plate grid and snapping math for reusable classic brick-game construction.
+# @brickstorm.scope runtime
+# @brickstorm.risk high
+# @brickstorm.contract brick_grid,stud_pitch,plate_height
+# @brickstorm.north_star classic_lego_mobile
+# @brickstorm.owner openai/brickstorm
+
 class_name BrickDimensions
 extends RefCounted
 
-# Brickstorm uses a game-scale brick grid inspired by classic interlocking-brick
-# proportions. Units are intentionally clean and deterministic for snapping,
-# animation, destruction, and mobile-friendly procedural construction.
+# Game-scale proportions are deterministic rather than manufacturer-exact. The
+# grid exists so vehicles, buildings, break clusters, and build animations can
+# share one authored language without importing proprietary geometry.
 const STUD_PITCH: float = 0.42
 const PLATE_HEIGHT: float = 0.16
 const BRICK_PLATES: int = 3
