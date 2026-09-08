@@ -33,7 +33,14 @@ Archive SHA-256: `4bc3aa2bb134f359df972af513a56f52a207f63dcd19dc4c654baea5120b3d
 
 ## Current development focus
 
-Turn more successful LEGO-style build sequences into useful machines, tools, traversal changes, secrets, and later mission dependencies. Contextual tools should remain simple world abilities rather than inventory simulation, and the existing ACTION input should be preferred on mobile when it stays readable.
+The user is still testing 0.3.3. Do not cut another public version solely because internal work exists.
+
+The active internal pass addresses two explicit feel corrections:
+
+1. **Stud currency readability:** collectible studs use silver 10, gold 100, blue 1,000, and purple 10,000 denominations, with value communicated by color rather than arbitrary per-pickup numbers.
+2. **On-foot character feel:** the current movement reads too much like Roblox and is unacceptable as a target. Rework locomotion toward fast start/stop response, hard pivots, articulated planted stride, and toy-weight jump/landing behavior. Automated tests protect measurable response, but physical-phone acceptance decides whether it actually feels right.
+
+Continue turning successful LEGO-style build sequences into useful machines, tools, traversal changes, secrets, and later mission dependencies. Contextual tools should remain simple world abilities rather than inventory simulation, and the existing ACTION input should be preferred on mobile when it stays readable.
 
 Latest physical-device ratings before 0.3.3 are barn destruction 4/5, storm-probe build 5/5, LEGO-game feel 4/5, truck control 5/5, and road crossing 5/5.
 
