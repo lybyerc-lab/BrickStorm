@@ -16,37 +16,40 @@ The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Re
 
 ## Current sealed baseline
 
-BrickStorm Foundation **0.3.3** is the current clean-package-tested OpenAI release candidate.
+BrickStorm Foundation **0.3.4** is the current clean-package-tested OpenAI release candidate.
 
-0.3.3 preserves the user-rated 5/5 truck control, 5/5 road crossing, and 5/5 storm-probe build rhythm while adding the first complete contextual-tool and usable-buildable loop: acquire a wrench, build the farm generator, use the wrench through ACTION, power the generator, and permanently open a gated equipment cache. Built weather machines also remain useful after assembly.
+0.3.4 directly addresses physical-phone feedback that the 0.3.3 tool loop was only 3/5 because tools were hard to recognize before pickup and unclear after pickup, and that movement/environment still felt too Roblox-like. It adds loud in-world tool identity, visible carried tools, a second pry-bar tool loop with a storm-cellar secret, canonical stud denomination/color identity, a hard-start/hard-stop/pivot-focused on-foot controller, a separately owned brick-chaser visual/animation component, and less rectangular farm dressing while preserving the accepted continuous road collision surface.
 
-Exact-package verification for 0.3.3 completed with:
+Exact-package verification for 0.3.4 completed with:
 
-- 63 tagged GDScripts
-- 36 authored scene/resource files
-- 46/46 behavior contracts
-- real Godot 4.7.2 import/runtime/content/soak gates
+- 68 tagged GDScripts
+- 39 authored scene/resource files
+- 51/51 behavior contracts
+- real Godot 4.7.2 import/runtime/content/character-feel/currency/soak gates
 - graphical touch tests at 1280x720, 1920x1080, and 2400x1080
-- 247/247 manifest entries unchanged after clean-package validation and Godot testing
+- 265/265 manifest entries unchanged after clean-package validation and Godot testing
 
-Archive SHA-256: `4bc3aa2bb134f359df972af513a56f52a207f63dcd19dc4c654baea5120b3d54`
+Archive SHA-256: `6e08c6d88e8d37b35aeec4ff53012c849fdcae19c2fa9f7f06939620fa9d1aef`
+
+## Protected wins
+
+- Truck heading control: 5/5
+- Road crossing: 5/5
+- Storm-probe build rhythm: 5/5
+
+Do not silently change these while tuning on-foot character feel, tool readability, or environmental presentation.
 
 ## Current development focus
 
-The user is still testing 0.3.3. Do not cut another public version solely because internal work exists.
+Get physical-device character movement, tool readability, and environment/LEGO feel above the current 4/5 ceiling. Continue growing useful buildables and contextual tools rather than inventory simulation. The wrench and pry bar are first examples; future families can include digging, cutting, levering, repair, science/scanning, and character-role abilities for story/Free Play routes.
 
-The active internal pass addresses two explicit feel corrections:
+Canonical physical stud currency is silver 10, gold 100, blue 1,000, purple 10,000. Color must communicate value immediately.
 
-1. **Stud currency readability:** collectible studs use silver 10, gold 100, blue 1,000, and purple 10,000 denominations, with value communicated by color rather than arbitrary per-pickup numbers.
-2. **On-foot character feel:** the current movement reads too much like Roblox and is unacceptable as a target. Rework locomotion toward fast start/stop response, hard pivots, articulated planted stride, and toy-weight jump/landing behavior. Automated tests protect measurable response, but physical-phone acceptance decides whether it actually feels right.
-
-Continue turning successful LEGO-style build sequences into useful machines, tools, traversal changes, secrets, and later mission dependencies. Contextual tools should remain simple world abilities rather than inventory simulation, and the existing ACTION input should be preferred on mobile when it stays readable.
-
-Latest physical-device ratings before 0.3.3 are barn destruction 4/5, storm-probe build 5/5, LEGO-game feel 4/5, truck control 5/5, and road crossing 5/5.
+Roblox-like capsule movement and generic bright block-sandbox terrain are explicit regression conditions, not acceptable long-term placeholders.
 
 ## Repository completeness
 
-This GitHub branch is still a curated workstream mirror, not yet a byte-for-byte mirror of the entire packaged 0.3.3 source tree. Do not claim otherwise. The sealed ZIP and its manifest remain the authoritative complete release snapshot until full repository migration is explicitly completed and verified.
+This GitHub branch is still a curated workstream mirror, not yet a byte-for-byte mirror of the entire packaged 0.3.4 source tree. Do not claim otherwise. The sealed ZIP and its manifest remain the authoritative complete release snapshot until full repository migration is explicitly completed and verified.
 
 ## Release discipline
 
