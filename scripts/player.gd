@@ -22,6 +22,7 @@ var carrying: Node3D = null
 var tumble_timer: float = 0.0
 var ability_timer: float = 0.0
 var driving: Node = null
+var invuln_timer: float = 0.0
 
 var _rigs: Dictionary = {}
 var _visual_root: Node3D = null
@@ -96,13 +97,17 @@ func smash_radius() -> float:
 #   not a general buff.
 # - Immunity to lift is the ONLY thing standing between the player and
 #   BS:LAW:NO_FAIL. It must never be granted permanently.
+# - A brief post-tumble immunity is part of it. TT Games respawn the player
+#   temporarily invincible; without that, a player caught in the red band is
+#   tumbled over and over with no way out, which is exactly the punishment the
+#   no-fail design exists to prevent. See Docs/TT_GAMES_REFERENCE.md.
 # ============================================================================
 func wind_resist() -> float:
 	if braced:
 		return 0.10
 	return 0.30 if character == Character.BILL else 1.0
 func immune_to_lift() -> bool:
-	return braced or character == Character.BILL
+	return braced or invuln_timer > 0.0 or character == Character.BILL
 # [BS:PLAYER:BRACE:END]
 
 func set_character(c: int) -> void:
@@ -132,8 +137,10 @@ func use_ability() -> void:
 #   is permanently lost.
 # - Do not add lives, health, or a damage model to the player.
 # ============================================================================
+const INVULN_TIME := 3.0
+
 func tumble() -> void:
-	if tumble_timer > 0.0:
+	if tumble_timer > 0.0 or invuln_timer > 0.0:
 		return
 	tumble_timer = TUMBLE_TIME
 	braced = false
@@ -178,6 +185,12 @@ func drop() -> Node3D:
 func _physics_process(delta: float) -> void:
 	if ability_timer > 0.0:
 		ability_timer -= delta
+	if invuln_timer > 0.0:
+		invuln_timer -= delta
+		# flicker so the grace period is visible, then always restore
+		_visual_root.visible = invuln_timer <= 0.0 or fmod(invuln_timer, 0.26) > 0.13
+		if invuln_timer <= 0.0:
+			_visual_root.visible = true
 
 	var wind := Vector3.ZERO
 	var t := get_tree().get_first_node_in_group("tornado") as Tornado
@@ -253,6 +266,7 @@ func _tumbling(delta: float) -> void:
 	if tumble_timer <= 0.0:
 		_visual_root.rotation.x = 0.0
 		_visual_root.position.y = 0.0
+		invuln_timer = INVULN_TIME
 # [BS:PLAYER:TUMBLE:END]
 
 

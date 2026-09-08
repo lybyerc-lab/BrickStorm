@@ -23,6 +23,7 @@ var body_colour: Color = BrickLib.C_RED
 var _visual: Node3D = null
 var _wheels: Array[Node3D] = []
 var _ram_cooldown: float = 0.0
+var _engine: AudioStreamPlayer3D = null
 
 
 func _ready() -> void:
@@ -143,6 +144,7 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 	rotation.y = heading
+	_update_engine(speed)
 
 	var roll := speed * delta * 3.0
 	for w in _wheels:
@@ -150,6 +152,31 @@ func _physics_process(delta: float) -> void:
 
 	_check_ram(speed)
 # [BS:VEHICLE:DRIVE:END]
+
+
+# ============================================================================
+# [BS:AUDIO:ENGINE]
+# Purpose: The engine loop, pitched and swelled by road speed.
+# Invariants:
+# - Attached lazily on first movement, so a level full of parked trucks does
+#   not open a dozen looping voices nobody hears.
+# - Driven by SPEED, not by throttle, so a truck the funnel is dragging still
+#   sounds like it is moving - which it is.
+# ============================================================================
+func _update_engine(speed: float) -> void:
+	if _engine == null:
+		if speed < 0.5:
+			return
+		var audio := get_tree().get_first_node_in_group("audio") as GameAudio
+		if audio == null:
+			return
+		_engine = audio.attach_loop("engine", self, -60.0)
+		if _engine == null:
+			return
+	var k: float = clampf(speed / max_speed, 0.0, 1.0)
+	_engine.volume_db = lerpf(-46.0, -12.0, k)
+	_engine.pitch_scale = 0.62 + k * 0.85
+# [BS:AUDIO:ENGINE:END]
 
 
 # ============================================================================

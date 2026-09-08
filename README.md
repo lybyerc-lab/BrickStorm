@@ -48,6 +48,8 @@ A vertical slice, running, not a mockup:
 - **smash everything**, always, with any character — and drive a truck through it
 - **drivable pickups** that tear scenery apart at speed
 - comic-book words at every impact, mooing airborne cows, and an occupied outhouse
+- **sound** — a funnel roar that swells with proximity, impacts, an engine that
+  pitches with speed, and stud pickups that climb a pitch ladder through a streak
 - a build spot, an anchor, and a **DOROTHY** deployment to close the loop
 - one-stick + three-button touch control, landscape
 
@@ -109,6 +111,8 @@ order:
 | [`Docs/NORTH_STAR.md`](Docs/NORTH_STAR.md) | The immovable target: the inversion, six pillars, the two laws, settled decisions, and what this game is **not**. Changes only by director approval. |
 | [`Docs/NO_DRIFT_POLICY.md`](Docs/NO_DRIFT_POLICY.md) | How it stays that way: the production summary, scope discipline, and an honest ranking of what each check can and cannot see. |
 | [`Docs/CODE_ANCHORS.md`](Docs/CODE_ANCHORS.md) | The 38 registered `[BS:...]` anchors, so high-risk logic is findable and its invariants live next to it. |
+| [`Docs/TT_GAMES_REFERENCE.md`](Docs/TT_GAMES_REFERENCE.md) | What the LEGO games actually do, sourced and cited, distilled into what we can use — and the line we do not cross on assets. |
+| [`ATTRIBUTION.md`](ATTRIBUTION.md) | Every third-party asset, where it came from, and its licence. All CC0. |
 | [`Docs/DECISION_LOG.md`](Docs/DECISION_LOG.md) | Append-only record of director decisions, each naming what it supersedes — so a deliberate reversal is never mistaken for drift. |
 | [`Docs/GAME_CONCEPT.md`](Docs/GAME_CONCEPT.md) | The full design: cast, campaign, collectibles, controls. |
 
@@ -142,6 +146,7 @@ anything.
 | `scripts/player.gd` | two characters, jump, brace, tumble, carry |
 | `scripts/vehicle.gd` | drivable trucks — arcade handling and ramming |
 | `scripts/comedy.gd` | the joke layer: comic-book words and the running gags |
+| `scripts/audio.gd` | the sound layer — event bank, voice pool, stud pitch ladder |
 | `scripts/stud_field.gd` | loose studs, magnet, collection value |
 | `scripts/hud.gd`, `virtual_stick.gd` | the two-thumb control scheme |
 | `scripts/main.gd` | world assembly, phases, camera, scoring |

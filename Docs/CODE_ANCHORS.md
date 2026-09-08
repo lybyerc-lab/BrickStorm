@@ -80,6 +80,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 ### Economy
 
 - `[BS:ECONOMY:RISK_BANDS]` — `scripts/tornado.gd` — band thresholds and multipliers
+- `[BS:ECONOMY:THRESHOLD_LOCK]` — `scripts/main.gd` — a crossed threshold is never taken back
 - `[BS:ECONOMY:STUD_VALUE]` — `scripts/stud_field.gd` — value decided at collection
 - `[BS:ECONOMY:STUD_RECYCLING]` — `scripts/stud_field.gd` — cap behaviour
 
@@ -105,6 +106,14 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:VEHICLE:OCCUPANCY]` — `scripts/vehicle.gd` — boarding and alighting
 - `[BS:VEHICLE:DRIVE]` — `scripts/vehicle.gd` — arcade handling; the stick is a heading
 - `[BS:VEHICLE:RAM]` — `scripts/vehicle.gd` — driving through scenery destroys it
+
+### Audio
+
+- `[BS:AUDIO:BANK]` — `scripts/audio.gd` — the event vocabulary; events name what happened, not the file
+- `[BS:AUDIO:MIXER]` — `scripts/audio.gd` — stream cache and the fixed 3D voice pool
+- `[BS:AUDIO:STUD_LADDER]` — `scripts/audio.gd` — rising pitch through a stud streak
+- `[BS:AUDIO:STORM_ROAR]` — `scripts/main.gd` — the funnel's roar as the primary risk signal
+- `[BS:AUDIO:ENGINE]` — `scripts/vehicle.gd` — engine loop pitched by road speed
 
 ### Comedy
 

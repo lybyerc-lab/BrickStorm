@@ -28,6 +28,8 @@ var structures: Array[Structure] = []
 var debris: Array = []
 var vehicles: Array[Vehicle] = []
 var comedy: Comedy
+var audio: GameAudio
+var _roar: AudioStreamPlayer3D = null
 var driving: Vehicle = null
 var outhouse: Structure = null
 var _outhouse_popped: bool = false
@@ -43,6 +45,7 @@ var anchor_node: Node3D
 var build_progress: float = 0.0
 var dorothy: Node3D
 var dorothy_deployed: bool = false
+var true_chaser_earned: bool = false
 
 var context_action: String = "BRACE"
 var build_held: bool = false
@@ -281,6 +284,11 @@ func _spawn_actors() -> void:
 	comedy.name = "Comedy"
 	add_child(comedy)
 
+	audio = GameAudio.new()
+	audio.name = "Audio"
+	audio.add_to_group("audio")
+	add_child(audio)
+
 	studfield = StudField.new()
 	studfield.name = "Studs"
 	add_child(studfield)
@@ -297,6 +305,12 @@ func _spawn_actors() -> void:
 		Vector3(-30, 0, 14), Vector3(-4, 0, 24), Vector3(24, 0, 12),
 		Vector3(34, 0, -12),
 	]))
+
+	_roar = audio.attach_loop("roar", tornado, -60.0)
+	if _roar != null:
+		# Volume is driven by the proximity curve below rather than by 3D
+		# falloff, so the swell is a designed curve and not a side effect.
+		_roar.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
 
 	player = Player.new()
 	player.name = "Player"
@@ -392,6 +406,7 @@ func _process(delta: float) -> void:
 	_update_phase(delta)
 	_age_debris(delta)
 	_update_gags()
+	_update_storm_audio()
 	hud.set_bracing(player.braced)
 	if demo_mode:
 		_demo_smash(delta)
@@ -536,7 +551,10 @@ func _update_context() -> void:
 
 
 func _on_jump_pressed() -> void:
+	var was_floor := player.is_on_floor()
 	player.jump()
+	if was_floor and player.driving == null and player.tumble_timer <= 0.0:
+		audio.jump(player.global_position)
 
 
 func _on_smash_pressed() -> void:
@@ -606,6 +624,7 @@ func _do_smash() -> void:
 		hit += bodies.size()
 	if hit > 0:
 		comedy.smash(p + Vector3(0, 1.6, 0))
+		audio.smash(p + Vector3(0, 1.2, 0), hit >= 5)
 # [BS:PLAYER:SMASH:END]
 
 
@@ -653,6 +672,7 @@ func _on_vehicle_ram(st: Node, at: Vector3, force: float) -> void:
 		debris.append({"body": b, "age": 0.0})
 	if bodies.size() > 0:
 		comedy.ram(at + Vector3(0, 1.4, 0))
+		audio.ram(at, force)
 
 
 func _do_deploy() -> void:
@@ -661,6 +681,7 @@ func _do_deploy() -> void:
 		return
 	pod.global_position = anchor_node.global_position + Vector3(0, 1.4, 0)
 	dorothy_deployed = true
+	audio.deployed(anchor_node.global_position)
 	hud.toast("DOROTHY DEPLOYED - HOLD THE ANCHOR", Color(0.5, 0.9, 1.0))
 	hud.set_objective("HOLD THE ANCHOR UNTIL THE FUNNEL PASSES")
 
@@ -680,6 +701,7 @@ func _update_phase(delta: float) -> void:
 		Phase.LOOT:
 			if score >= STUD_GOAL:
 				phase = Phase.BUILD
+				audio.objective(player.global_position)
 				hud.toast("ANCHOR SITE UNLOCKED", Color(0.4, 0.95, 1.0))
 				hud.set_objective("BUILD THE ANCHOR")
 		Phase.BUILD:
@@ -713,13 +735,15 @@ func _assemble_anchor() -> void:
 		brace.rotation = Vector3(0.5, -a, 0)
 		anchor_node.add_child(brace)
 	comedy.built(anchor_node.global_position + Vector3(0, 3.4, 0))
+	audio.built(anchor_node.global_position)
 	hud.toast("ANCHOR BUILT", Color(0.5, 1.0, 0.6))
 	hud.set_objective("GRAB DOROTHY FROM THE TRUCK")
 
 
 func _win() -> void:
 	phase = Phase.WON
-	var rating := "TRUE CHASER" if score >= TRUE_CHASER else "LOGGED"
+	# Latched, not re-tested: a tumble after earning it must not take it back.
+	var rating := "TRUE CHASER" if true_chaser_earned else "LOGGED"
 	hud.toast("F3 LOGGED - DOROTHY DEPLOYED   %s" % rating, BrickLib.C_YELLOW)
 	hud.set_objective("F3 LOGGED - %s   (%d STUDS)" % [rating, score])
 
@@ -785,8 +809,29 @@ func _check_lift() -> void:
 
 
 # ------------------------------------------------------------------- scoring
-func _on_stud_collected(value: int, _band: int, _at: Vector3) -> void:
+# ============================================================================
+# [BS:ECONOMY:THRESHOLD_LOCK]
+# Purpose: A threshold, once crossed, is never taken back.
+# Invariants:
+# - TRUE CHASER latches. Tumbling costs studs, but it must NEVER un-earn a
+#   threshold the player already reached. This is the load-bearing rule behind
+#   TT Games' whole risk economy: the currency is soft, the achievement is
+#   hard, and that is what makes players willing to keep taking risks.
+#   See Docs/TT_GAMES_REFERENCE.md.
+# - Any future award, rating or unlock added here latches the same way. If it
+#   can be lost, it is not a threshold, it is a punishment.
+# ============================================================================
+func _on_stud_collected(value: int, _band: int, at: Vector3) -> void:
 	score += value
+	audio.stud(at)
+	if score >= TRUE_CHASER:
+		if not true_chaser_earned:
+			true_chaser_earned = true
+			audio.objective(player.global_position)
+			hud.toast("TRUE CHASER", BrickLib.C_YELLOW)
+			comedy.pop(player.global_position + Vector3(0, 3.0, 0),
+				"TRUE CHASER!", Color(1.0, 0.85, 0.25), 150)
+# [BS:ECONOMY:THRESHOLD_LOCK:END]
 
 
 # The toll for getting caught: studs, not a game over (Design Law #2).
@@ -795,6 +840,7 @@ func _on_player_tumbled(at: Vector3) -> void:
 	score -= lost
 	hud.toast("TUMBLED" if lost == 0 else "TUMBLED  -%d" % lost, Color(1.0, 0.5, 0.4))
 	comedy.tumble(at + Vector3(0, 2.0, 0))
+	audio.tumble(at + Vector3(0, 1.0, 0))
 	var away := (player.global_position - tornado.funnel_pos()).normalized()
 	player.launch(away, 12.0)
 	if lost > 0:
@@ -803,6 +849,27 @@ func _on_player_tumbled(at: Vector3) -> void:
 
 # ---------------------------------------------------------------------- demo
 # Autopilot used for verification captures: walk the risk bands, loot, brace.
+# ============================================================================
+# [BS:AUDIO:STORM_ROAR]
+# Purpose: The funnel's roar, swelling with proximity.
+# Invariants:
+# - The roar is the player's PRIMARY risk signal - it must be readable with
+#   the screen ignored, because the whole game is about how close you dare to
+#   stand and the eyes are busy looting.
+# - Volume follows a designed curve, not 3D falloff, so the swell is authored.
+# - It rises with the bands. If it is loud, the multiplier is high.
+# ============================================================================
+func _update_storm_audio() -> void:
+	if _roar == null:
+		return
+	var d := tornado.funnel_pos().distance_to(player.global_position)
+	var near: float = clampf(1.0 - d / 78.0, 0.0, 1.0)
+	near = near * near
+	_roar.volume_db = lerpf(-42.0, -6.0, near)
+	_roar.pitch_scale = 0.70 + near * 0.26
+# [BS:AUDIO:STORM_ROAR:END]
+
+
 # ============================================================================
 # [BS:COMEDY:GAGS]
 # Purpose: The running jokes - flying livestock and the outhouse.
@@ -1016,15 +1083,61 @@ func _run_selftest() -> void:
 	for i in range(700):
 		await get_tree().physics_frame
 
+	# --- 5. every declared sound must exist and be a real stream ----------
+	var missing: Array[String] = []
+	var sounds := 0
+	# Check the SOURCE file on disk as well as the loaded stream. load() alone
+	# resolves out of .godot/imported/, so a deleted .ogg still "loads" from a
+	# stale cache and the assert silently cannot fail. Found the hard way.
+	for ev in GameAudio.BANK:
+		for n in GameAudio.BANK[ev]:
+			sounds += 1
+			var st: AudioStream = audio.stream_for(n)
+			if not FileAccess.file_exists(GameAudio.DIR + n + ".ogg"):
+				missing.append("%s/%s (source file absent)" % [ev, n])
+			elif st == null or st.get_length() <= 0.0:
+				missing.append("%s/%s (stream empty)" % [ev, n])
+	for k in GameAudio.LOOPS:
+		sounds += 1
+		var ln: String = GameAudio.LOOPS[k]
+		var st2: AudioStream = audio.stream_for(ln, true)
+		if not FileAccess.file_exists(GameAudio.DIR + ln + ".ogg"):
+			missing.append("loop/%s (source file absent)" % k)
+		elif st2 == null or st2.get_length() <= 0.0:
+			missing.append("loop/%s (stream empty)" % k)
+	if not missing.is_empty():
+		fails.append("audio assets missing or empty: %s" % ", ".join(missing))
+
+	# --- 6. TT Games rules: threshold latches, tumble grants grace ---------
+	var score_before := score
+	score = TRUE_CHASER + 100
+	_on_stud_collected(0, 0, player.global_position)
+	if not true_chaser_earned:
+		fails.append("TRUE CHASER did not latch on crossing the threshold")
+	score = 0
+	if not true_chaser_earned:
+		fails.append("TRUE CHASER was lost when studs fell - thresholds must latch")
+	score = score_before          # leave the economy assertion below meaningful
+
+	player.invuln_timer = 0.0
+	player.tumble_timer = 0.0
+	player.tumble()
+	for i in range(int(Player.TUMBLE_TIME * 61.0) + 6):
+		await get_tree().physics_frame
+	if player.invuln_timer <= 0.0:
+		fails.append("no grace period after a tumble - player can be re-tumbled instantly")
+	if not player.immune_to_lift():
+		fails.append("grace period does not actually prevent being lifted")
+
 	var torn := _total_torn()
 	if torn < 10:
 		fails.append("funnel tore only %d bricks" % torn)
 	if studfield.studs.size() == 0 and score == 0:
 		fails.append("destruction produced no studs")
 
-	print("SELFTEST drove=%.1fm ram_torn=%d smash_torn=%d jump_from=%.2f torn=%d debris=%d studs=%d score=%d phase=%d" % [
+	print("SELFTEST drove=%.1fm ram_torn=%d smash_torn=%d jump_from=%.2f torn=%d debris=%d studs=%d score=%d phase=%d sounds=%d" % [
 		drove, ram_torn, smash_torn, y0, torn, debris.size(),
-		studfield.studs.size(), score, phase])
+		studfield.studs.size(), score, phase, sounds])
 	for f in fails:
 		print("SELFTEST FAIL: %s" % f)
 	print("SELFTEST OK" if fails.is_empty() else "SELFTEST FAILED")
