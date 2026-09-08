@@ -6,8 +6,8 @@
 # deployment, and one-stick landscape touch control.
 extends Node3D
 
-const STUD_GOAL := 400
-const TRUE_CHASER := 1400
+const STUD_GOAL := 3500
+const TRUE_CHASER := 9000
 const MAX_LOOSE := 110
 const TEAR_BUDGET := 5
 const BRICK_LIFETIME := 6.0
@@ -37,6 +37,16 @@ var _cow_air: Dictionary = {}
 var _force_input: bool = false
 var _forced_input := Vector2.ZERO
 var _cam_dir := Vector3(0, 0, 1)
+var _stream_z: float = 0.0
+var _near: Array[Structure] = []
+var _near_t: float = 0.0
+var _near_from := Vector3(1e9, 1e9, 1e9)
+var _stream_t: float = 0.0
+var _block_seed: int = 0
+const BLOCK_DEPTH := 34.0
+const STREAM_AHEAD := 190.0
+const STREAM_BEHIND := 95.0
+const CORRIDOR_HALF_WIDTH := 46.0
 
 var score: int = 0
 var phase: int = Phase.LOOT
@@ -61,7 +71,11 @@ var playthrough: bool = false
 var _tel: Array = []
 var _tel_shot: float = 0.0
 var _tel_shots: int = 0
-const PLAYTHROUGH_SECONDS := 150.0
+var _fps_min: float = 9999.0
+var _fps_sum: float = 0.0
+var _fps_n: int = 0
+var _peak_structures: int = 0
+const PLAYTHROUGH_SECONDS := 200.0
 var _demo_target := Vector3.ZERO
 var _elapsed: float = 0.0
 
@@ -201,38 +215,117 @@ func _add_structure(st: Structure) -> void:
 #   contrast (screenshot checklist).
 # ============================================================================
 func _build_town() -> void:
-	_add_structure(PropBuilder.farmhouse(Vector3(-20, 0, -12)))
+	# A starting pocket around the player. Everything beyond this arrives from
+	# BS:WORLD:STREAM as the storm advances.
 	_add_structure(PropBuilder.barn(Vector3(16, 0, -18)))
+	_add_structure(PropBuilder.farmhouse(Vector3(-20, 0, -12)))
 	_add_structure(PropBuilder.silo(Vector3(25, 0, -14)))
-	_add_structure(PropBuilder.silo(Vector3(29, 0, -18)))
 	_add_structure(PropBuilder.water_tower(Vector3(-6, 0, 22)))
-	_add_structure(PropBuilder.windmill(Vector3(30, 0, 10)))
-	_add_structure(PropBuilder.drive_in_screen(Vector3(-34, 0, 26), 0.6))
-	_add_structure(PropBuilder.farmhouse(Vector3(6, 0, 34)))
-	_add_structure(PropBuilder.barn(Vector3(-30, 0, -34)))
-
-	# Two parked wrecks as scenery, two you can actually get into.
-	_add_structure(PropBuilder.pickup(Vector3(20, 0, -8), BrickLib.C_BLUE, -0.7))
-	_add_structure(PropBuilder.pickup(Vector3(-2, 0, 30), BrickLib.C_YELLOW, 2.6))
 	_add_vehicle(Vector3(-13, 0.4, -4), BrickLib.C_RED, 0.4)
 	_add_vehicle(Vector3(-8, 0.4, 2), BrickLib.C_WHITE, 1.9)
-
 	outhouse = PropBuilder.outhouse(Vector3(9, 0, 4))
 	_add_structure(outhouse)
-
-	for p in [Vector3(-28, 0, 4), Vector3(-16, 0, 12), Vector3(8, 0, -30), Vector3(34, 0, -4),
-			Vector3(-40, 0, -18), Vector3(18, 0, 22), Vector3(-2, 0, -28), Vector3(40, 0, 24)]:
+	for p in [Vector3(-28, 0, 4), Vector3(-16, 0, 12), Vector3(8, 0, -30), Vector3(34, 0, -4)]:
 		_add_structure(PropBuilder.tree(p, randf_range(0.85, 1.3)))
-
 	_add_structure(PropBuilder.fence_run(Vector3(-12, 0, 6), Vector3(12, 0, 6)))
-	_add_structure(PropBuilder.fence_run(Vector3(12, 0, 6), Vector3(12, 0, 26)))
-	_add_structure(PropBuilder.fence_run(Vector3(-34, 0, -6), Vector3(-34, 0, 14)))
+	for k in range(16):
+		var a := TAU * float(k) / 16.0
+		var r := 12.0 + fmod(float(k) * 7.3, 22.0)
+		_add_structure(PropBuilder.furniture(k * 3, Vector3(cos(a) * r, 0, sin(a) * r - 6.0), a))
+	_stream_z = 20.0
 
 	_build_cows()
 
 
 # Design Law #1: cows fly, cows land, cows are never destroyed.
 # [BS:WORLD:LAYOUT:END]
+
+
+# ============================================================================
+# [BS:WORLD:STREAM]
+# Purpose: Keep the corridor populated ahead of the storm and reclaim it behind.
+# Invariants:
+# - The world is a ROUTE the storm travels, not an arena it loops. Measured on
+#   2026-09-08: an arena is bare 90 seconds in and the last third of the round
+#   has nothing in it. See Docs/PLAYTEST_VS_LEGO_INDY.md.
+# - Blocks spawn ahead and are reclaimed behind, so the live object count is
+#   bounded no matter how long the round runs. Never generate the whole
+#   corridor up front.
+# - Density is the point. In a LEGO game you are never more than a couple of
+#   paces from something that breaks, and that is what makes SMASH the default
+#   verb rather than an occasional one.
+# - Nothing may spawn ON the player or inside the storm.
+# ============================================================================
+func _stream_world(delta: float) -> void:
+	_stream_t -= delta
+	if _stream_t > 0.0:
+		return
+	_stream_t = 0.4
+	var front := tornado.funnel_pos().z + STREAM_AHEAD
+	while _stream_z < front:
+		_spawn_block(_stream_z)
+		_stream_z += BLOCK_DEPTH
+
+	var cutoff := tornado.funnel_pos().z - STREAM_BEHIND
+	var i := structures.size() - 1
+	while i >= 0:
+		var st := structures[i]
+		if not is_instance_valid(st):
+			structures.remove_at(i)
+		elif st.global_position.z < cutoff:
+			st.queue_free()
+			structures.remove_at(i)
+		i -= 1
+
+
+func _rng(n: int) -> float:
+	# cheap deterministic hash so a block is stable if regenerated
+	var x := float((n * 1103515245 + 12345) % 2147483647) / 2147483647.0
+	return absf(x)
+
+
+func _spawn_block(z0: float) -> void:
+	_block_seed += 1
+	var b := _block_seed
+	var w := CORRIDOR_HALF_WIDTH
+
+	# One landmark per block, alternating, so there is always something big
+	# arriving ahead of the storm.
+	var lx: float = lerpf(-w * 0.7, w * 0.7, _rng(b * 7))
+	var lz: float = z0 + _rng(b * 11) * BLOCK_DEPTH
+	match b % 6:
+		0: _add_structure(PropBuilder.barn(Vector3(lx, 0, lz)))
+		1: _add_structure(PropBuilder.farmhouse(Vector3(lx, 0, lz)))
+		2:
+			_add_structure(PropBuilder.silo(Vector3(lx, 0, lz)))
+			_add_structure(PropBuilder.silo(Vector3(lx + 4.0, 0, lz - 4.0)))
+		3: _add_structure(PropBuilder.water_tower(Vector3(lx, 0, lz)))
+		4: _add_structure(PropBuilder.windmill(Vector3(lx, 0, lz)))
+		_: _add_structure(PropBuilder.drive_in_screen(Vector3(lx, 0, lz), _rng(b) * 2.0))
+
+	# trees and fences give the corridor edges
+	for k in range(3):
+		var tx: float = lerpf(-w, w, _rng(b * 31 + k * 17))
+		_add_structure(PropBuilder.tree(Vector3(tx, 0, z0 + _rng(b + k * 5) * BLOCK_DEPTH),
+			0.85 + _rng(b * 3 + k) * 0.5))
+	if b % 2 == 0:
+		var fx: float = lerpf(-w * 0.8, w * 0.8, _rng(b * 41))
+		_add_structure(PropBuilder.fence_run(
+			Vector3(fx, 0, z0 + 2.0), Vector3(fx, 0, z0 + BLOCK_DEPTH - 2.0)))
+
+	# the dense furniture layer - this is what removes dead time
+	for k in range(11):
+		var fx2: float = lerpf(-w, w, _rng(b * 97 + k * 23))
+		var fz: float = z0 + _rng(b * 53 + k * 13) * BLOCK_DEPTH
+		var yaw: float = _rng(b * 61 + k) * TAU
+		_add_structure(PropBuilder.furniture(b * 7 + k, Vector3(fx2, 0, fz), yaw))
+
+	# an occasional parked truck to ram
+	if b % 3 == 1:
+		var px: float = lerpf(-w * 0.6, w * 0.6, _rng(b * 71))
+		_add_structure(PropBuilder.pickup(Vector3(px, 0, z0 + BLOCK_DEPTH * 0.5),
+			[BrickLib.C_BLUE, BrickLib.C_YELLOW, BrickLib.C_WHITE][b % 3], _rng(b * 13) * TAU))
+# [BS:WORLD:STREAM:END]
 # ============================================================================
 # [BS:WORLD:CRITTERS]
 # Purpose: Cows - protected actors, and the proof of North Star Law 1.
@@ -308,11 +401,9 @@ func _spawn_actors() -> void:
 	tornado.debris_root = debris_root
 	tornado.critter_root = critter_root
 	add_child(tornado)
-	tornado.set_path(PackedVector3Array([
-		Vector3(30, 0, -32), Vector3(14, 0, -18), Vector3(-18, 0, -10),
-		Vector3(-30, 0, 14), Vector3(-4, 0, 24), Vector3(24, 0, 12),
-		Vector3(34, 0, -12),
-	]))
+	tornado.corridor_mode = true
+	tornado.move_speed = 3.0
+	tornado.global_position = Vector3(0, 0, -24)
 
 	_roar = audio.attach_loop("roar", tornado, -60.0)
 	if _roar != null:
@@ -414,6 +505,8 @@ func _process(delta: float) -> void:
 	_update_phase(delta)
 	_age_debris(delta)
 	_update_gags()
+	_stream_world(delta)
+	_refresh_near(delta)
 	if playthrough:
 		_tick_playthrough(delta)
 	_update_storm_audio()
@@ -532,10 +625,47 @@ func _update_camera(delta: float) -> void:
 
 # ------------------------------------------------------------------ contexts
 # [BS:CAMERA:DIRECTOR:END]
+# ============================================================================
+# [BS:WORLD:NEAR_CACHE]
+# Purpose: A short list of structures close enough to matter this frame.
+# Invariants:
+# - The hot loops - context probing, funnel tearing, player smash - must NOT
+#   walk every structure in the corridor every frame. Measured 2026-09-08: with
+#   152 live structures the round ran at 10 fps, and dropping the render
+#   resolution to an eighth changed it to 12, which is what proved the cost was
+#   CPU-side GDScript iteration rather than rendering.
+# - Refreshed on a timer, not per frame. A quarter second of staleness is
+#   invisible at walking pace and is the entire point of the cache.
+# - Anything iterating `structures` directly in a per-frame path is a bug.
+# - The refresh is also distance-triggered, not purely on a timer: a teleport
+#   or a fast truck outruns a 0.25s timer and a stale list makes SMASH hit
+#   nothing at all.
+# ============================================================================
+func _refresh_near(delta: float) -> void:
+	_near_t -= delta
+	# Also refresh early if the player has moved far since the last rebuild -
+	# a timer alone goes stale under a teleport or a fast vehicle, and a stale
+	# list means SMASH silently hits nothing.
+	if _near_t > 0.0 and player.global_position.distance_squared_to(_near_from) < 64.0:
+		return
+	_near_t = 0.25
+	_near_from = player.global_position
+	_near.clear()
+	var p := player.global_position
+	var c := tornado.funnel_pos()
+	for st in structures:
+		if not is_instance_valid(st) or st.is_rubble():
+			continue
+		var o := st.global_position
+		if o.distance_squared_to(p) < 4900.0 or o.distance_squared_to(c) < 2500.0:
+			_near.append(st)
+# [BS:WORLD:NEAR_CACHE:END]
+
+
 func _nearest_structure(within: float) -> Structure:
 	var best: Structure = null
 	var bd := within
-	for s in structures:
+	for s in _near:
 		if s.is_rubble():
 			continue
 		var d := s.global_position.distance_to(player.global_position)
@@ -635,7 +765,7 @@ func _do_smash() -> void:
 	var p := player.global_position
 	var reach := player.smash_radius()
 	var hit := 0
-	for st in structures:
+	for st in _near:
 		if hit >= 10:
 			break
 		if st.is_rubble():
@@ -730,6 +860,7 @@ func _update_phase(delta: float) -> void:
 		Phase.LOOT:
 			if score >= STUD_GOAL:
 				phase = Phase.BUILD
+				_relocate_objective()
 				_log_event("PHASE", "BUILD unlocked at %d studs" % score)
 				audio.objective(player.global_position)
 				hud.toast("ANCHOR SITE UNLOCKED", Color(0.4, 0.95, 1.0))
@@ -746,6 +877,14 @@ func _update_phase(delta: float) -> void:
 		_:
 			pass
 # [BS:OBJECTIVE:PHASES:END]
+
+
+# The corridor moves; a build site left at the start line is unreachable.
+func _relocate_objective() -> void:
+	var c := tornado.funnel_pos()
+	build_spot.global_position = Vector3(c.x + randf_range(-16.0, 16.0), 0.0, c.z + 24.0)
+	if dorothy != null and not dorothy_deployed and player.carrying == null:
+		dorothy.global_position = player.global_position + Vector3(5.0, 0.0, 3.0)
 
 
 func _assemble_anchor() -> void:
@@ -783,7 +922,7 @@ func _win() -> void:
 func _tear_with_funnel() -> void:
 	var c := tornado.funnel_pos()
 	var budget := TEAR_BUDGET
-	for s in structures:
+	for s in _near:
 		if budget <= 0:
 			break
 		if s.torn_count >= s.entries.size():
@@ -969,6 +1108,11 @@ func _log_event(kind: String, detail: String = "") -> void:
 
 
 func _tick_playthrough(delta: float) -> void:
+	var fps := 1.0 / maxf(delta, 0.0001)
+	_fps_min = minf(_fps_min, fps)
+	_fps_sum += fps
+	_fps_n += 1
+	_peak_structures = maxi(_peak_structures, structures.size())
 	_tel_shot += delta
 	if _tel_shot >= 18.0 and _tel_shots < 8:
 		_tel_shot = 0.0
@@ -995,6 +1139,9 @@ func _dump_playthrough() -> void:
 	f.store_line("bricks torn     %d" % _total_torn())
 	f.store_line("phase reached   %d" % phase)
 	f.store_line("true chaser     %s" % str(true_chaser_earned))
+	f.store_line("corridor z      %.0f m travelled" % (tornado.funnel_pos().z + 24.0))
+	f.store_line("live structures %d (peak %d)" % [structures.size(), _peak_structures])
+	f.store_line("fps             avg %.0f  min %.0f" % [_fps_sum / maxf(float(_fps_n), 1.0), _fps_min])
 
 	var counts: Dictionary = {}
 	for e in _tel:
@@ -1172,8 +1319,12 @@ func _run_selftest() -> void:
 	_force_input = true
 
 	# --- 1. driving and ramming ------------------------------------------
+	# A dedicated target well outside the corridor, so this tests the RAM
+	# mechanic rather than whatever the world generator happened to place.
+	var ram_target := PropBuilder.barn(Vector3(300, 0, 0))
+	_add_structure(ram_target)
 	var truck: Vehicle = vehicles[0]
-	truck.global_position = Vector3(16, 0.4, -32)
+	truck.global_position = Vector3(300, 0.4, -24)
 	truck.heading = 0.0
 	player.global_position = truck.global_position
 	_enter_vehicle()
@@ -1197,7 +1348,9 @@ func _run_selftest() -> void:
 
 	# --- 2. player smash --------------------------------------------------
 	await get_tree().physics_frame
-	player.global_position = Vector3(25, 0.4, -14)   # beside a silo
+	var smash_target := PropBuilder.silo(Vector3(340, 0, 0))
+	_add_structure(smash_target)
+	player.global_position = Vector3(340, 0.4, -2.2)  # beside a dedicated silo
 	await get_tree().physics_frame
 	var torn_before_smash := _total_torn()
 	for i in range(6):
@@ -1210,7 +1363,7 @@ func _run_selftest() -> void:
 	# --- 3. jump ----------------------------------------------------------
 	# Park the funnel well away first: a lingering tumble from the smash test
 	# would refuse the jump and make this assert order-dependent.
-	tornado.global_position = Vector3(160, 0, 160)
+	tornado.global_position = Vector3(0, 0, -400)
 	player.tumble_timer = 0.0
 	player.global_position = Vector3(0, 0.2, 12)
 	for i in range(20):

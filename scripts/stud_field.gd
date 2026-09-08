@@ -80,10 +80,11 @@ func _process(delta: float) -> void:
 			if n.global_position.y <= 0.16:
 				n.global_position.y = 0.16
 				s["settled"] = true
-		else:
+		var far := n.global_position.distance_squared_to(ppos) > 900.0
+		if not far and s["settled"]:
 			n.global_position.y = 0.16 + sin(Time.get_ticks_msec() * 0.004 + float(i)) * 0.06
 
-		if player != null and player.tumble_timer <= 0.0:
+		if not far and player != null and player.tumble_timer <= 0.0:
 			var d := n.global_position.distance_to(ppos + Vector3(0, 0.5, 0))
 			if d < magnet:
 				var pull: float = clampf(1.0 - d / magnet, 0.0, 1.0)

@@ -135,3 +135,70 @@ Ranked by how much each closes the gap, not by effort:
 
 Items 1 and 3 together are the honest answer to "it doesn't identify as a
 classic LEGO game". The art pass helped; the *structure* is the gap.
+
+
+---
+
+# Follow-up: the corridor rebuild (same day)
+
+Findings 1 and 3 were implemented together, because they turned out to be one
+problem: the level emptied not because the world was small but because the storm
+**looped a small arena**, re-crossing ground it had already eaten.
+
+## What changed
+
+- **The world streams.** Blocks of scenery spawn ahead of the storm and are
+  reclaimed behind it (`[BS:WORLD:STREAM]`). The storm now travels a corridor
+  instead of orbiting. Live object count is bounded no matter how long the round
+  runs.
+- **Eleven new smashable props** — mailboxes, bins, crates, hay bales, signs,
+  benches, barrels, troughs, crops, tyre stacks — scattered ~11 per block.
+- **Economy retuned**: `TRUE_CHASER` 1,400 → 9,000, `STUD_GOAL` 400 → 3,500.
+- **Structures batched** into two MultiMesh draw calls each instead of two per
+  brick (`[BS:DESTRUCTION:STRUCTURE]`).
+- **Hot loops cached** (`[BS:WORLD:NEAR_CACHE]`) so per-frame work no longer
+  walks every structure in the corridor.
+
+## Measured, against the same 200 s harness
+
+| | Before (arena) | After (corridor) |
+|---|---|---|
+| SMASH / min | 2.8 | **6.3** |
+| Longest silence | **14.3 s** | **7.7 s** |
+| TRUE CHASER earned | **t ≈ 7 s** | not in 200 s |
+| BUILD unlocked | t = 6.95 s | not in 200 s |
+| Map state at end | **bare at t≈90 s** | 133 live structures, 600 m travelled |
+| Activity distribution | all in first bucket | every bucket populated |
+
+The structural problem is fixed. The level no longer consumes itself, smashing
+roughly doubled, and dead time roughly halved.
+
+## Two things now over-corrected
+
+`TRUE_CHASER = 9,000` was not reached in 200 s (the autopilot banked ~2,000), and
+`STUD_GOAL = 3,500` means BUILD never unlocked either, so the objective chain was
+never exercised in this run. Both were tuned against the *old* stud rate and the
+new world pays out differently. They need one more calibration pass against a
+human run, not an autopilot one.
+
+## Performance: unresolved, and unmeasurable here
+
+The round reports **9 fps average**. Three separate optimisations moved it
+essentially not at all:
+
+1. MultiMesh batching (draw calls cut by roughly an order of magnitude) — no change.
+2. Caching the per-frame structure loops — no change.
+3. Rendering at one-eighth the pixels (1280×720 → 480×270) — 10 fps → 12 fps.
+
+Three independent changes with no effect, including a resolution cut, is strong
+evidence that **the bottleneck is the software renderer in this container**
+(llvmpipe under Xvfb), not the game. There is no GPU here.
+
+The honest conclusion is that **frame rate cannot be measured in this
+environment**, and the 9 fps figure should not be read as a device number in
+either direction. The batching and caching are still correct — they demonstrably
+reduce draw calls and per-frame iteration — but their benefit is unproven.
+
+This is exactly what `Docs/NO_DRIFT_POLICY.md` means by the device being the
+final authority. The next real performance datapoint has to come from the APK on
+hardware.

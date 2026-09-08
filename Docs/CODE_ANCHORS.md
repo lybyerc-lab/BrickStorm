@@ -131,6 +131,8 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 - `[BS:WORLD:ENVIRONMENT]` — `scripts/main.gd` — sky, light, fog
 - `[BS:WORLD:GROUND]` — `scripts/main.gd` — ground plane and crop squares
+- `[BS:WORLD:NEAR_CACHE]` — `scripts/main.gd` — cached short list of nearby structures for the per-frame hot loops
+- `[BS:WORLD:STREAM]` — `scripts/main.gd` — corridor blocks spawn ahead of the storm and are reclaimed behind
 - `[BS:WORLD:LAYOUT]` — `scripts/main.gd` — where the town stands
 - `[BS:WORLD:CRITTERS]` — `scripts/main.gd` — cows; protected actors
 

@@ -253,4 +253,146 @@ static func outhouse(pos: Vector3) -> Structure:
 	st.add_brick(6, 6, 0.24, BrickLib.C_DGREY, Vector3(0, H * 6.2, 0))
 	st.finish()
 	return st
+
+# --- small smashable furniture ------------------------------------------
+# The cheap stuff that removes dead time. In a LEGO game you are never more
+# than a couple of paces from something that breaks, and that is what makes
+# SMASH the default verb instead of an occasional one.
+
+static func mailbox(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	st.add_brick(1, 1, 1.1, BrickLib.C_BROWN, Vector3(0, 0.55, 0), Vector3.ZERO, false)
+	st.add_brick(2, 2, 0.4, BrickLib.C_DGREY, Vector3(0, 1.28, 0))
+	st.add_brick(1, 1, 0.16, BrickLib.C_RED, Vector3(0.28, 1.36, 0), Vector3.ZERO, false)
+	st.finish()
+	return st
+
+
+static func bin(pos: Vector3) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	var n := 6
+	for c in range(2):
+		for i in range(n):
+			var a: float = TAU * float(i) / float(n) + float(c) * 0.26
+			st.add_brick(2, 1, H, BrickLib.C_GREEN,
+				Vector3(cos(a) * 0.42, float(c) * H + H * 0.5, sin(a) * 0.42), Vector3(0, -a, 0))
+	st.add_brick(3, 3, 0.18, BrickLib.C_DGREY, Vector3(0, 2.0 * H + 0.1, 0))
+	st.finish()
+	return st
+
+
+static func crate(pos: Vector3, yaw: float = 0.0, stacked: bool = false) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	st.add_brick(3, 3, 0.7, BrickLib.C_TAN, Vector3(0, 0.35, 0))
+	if stacked:
+		st.add_brick(3, 3, 0.7, BrickLib.C_BROWN, Vector3(0.1, 1.05, -0.08), Vector3(0, 0.4, 0))
+	st.finish()
+	return st
+
+
+static func hay_bale(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	var n := 8
+	for i in range(n):
+		var a: float = TAU * float(i) / float(n)
+		st.add_brick(2, 2, 0.5, BrickLib.C_YELLOW,
+			Vector3(0, 0.55 + cos(a) * 0.42, sin(a) * 0.42), Vector3(a, 0, 0))
+	st.finish()
+	return st
+
+
+static func road_sign(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	st.add_brick(1, 1, 1.9, BrickLib.C_LGREY, Vector3(0, 0.95, 0), Vector3.ZERO, false)
+	st.add_brick(4, 1, 0.5, BrickLib.C_WHITE, Vector3(0, 2.0, 0))
+	st.finish()
+	return st
+
+
+static func bench(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	st.add_brick(6, 2, 0.18, BrickLib.C_BROWN, Vector3(0, 0.55, 0))
+	st.add_brick(6, 1, 0.5, BrickLib.C_BROWN, Vector3(0, 0.85, -0.22))
+	for sx in [-1.1, 1.1]:
+		st.add_brick(1, 2, 0.5, BrickLib.C_DGREY, Vector3(sx, 0.27, 0), Vector3.ZERO, false)
+	st.finish()
+	return st
+
+
+static func barrel(pos: Vector3, colour: Color = BrickLib.C_BLUE) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	var n := 7
+	for c in range(3):
+		for i in range(n):
+			var a: float = TAU * float(i) / float(n) + float(c) * 0.22
+			st.add_brick(2, 1, H, colour,
+				Vector3(cos(a) * 0.36, float(c) * H + H * 0.5, sin(a) * 0.36), Vector3(0, -a, 0))
+	st.finish()
+	return st
+
+
+static func trough(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	st.add_brick(6, 3, 0.2, BrickLib.C_LGREY, Vector3(0, 0.3, 0))
+	for sz in [-0.65, 0.65]:
+		st.add_brick(6, 1, 0.4, BrickLib.C_LGREY, Vector3(0, 0.6, sz))
+	st.finish()
+	return st
+
+
+static func crop_patch(pos: Vector3) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	for i in range(7):
+		var a: float = TAU * float(i) / 7.0
+		var r: float = 0.7 + fmod(float(i) * 0.7, 0.8)
+		st.add_brick(1, 1, 0.9 + fmod(float(i), 3.0) * 0.15, BrickLib.C_LGREEN,
+			Vector3(cos(a) * r, 0.5, sin(a) * r), Vector3.ZERO, false)
+	st.finish()
+	return st
+
+
+static func tyre_stack(pos: Vector3) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	for c in range(3):
+		var n := 6
+		for i in range(n):
+			var a: float = TAU * float(i) / float(n) + float(c) * 0.3
+			st.add_brick(2, 1, 0.22, BrickLib.C_BLACK,
+				Vector3(cos(a) * 0.5, 0.12 + float(c) * 0.24, sin(a) * 0.5), Vector3(0, -a, 0), false)
+	st.finish()
+	return st
+
+
+# One call that returns a piece of scenery chosen by index, so the scatter in
+# main.gd stays a placement problem rather than a giant match statement.
+static func furniture(kind: int, pos: Vector3, yaw: float) -> Structure:
+	match kind % 10:
+		0: return mailbox(pos, yaw)
+		1: return bin(pos)
+		2: return crate(pos, yaw, false)
+		3: return crate(pos, yaw, true)
+		4: return hay_bale(pos, yaw)
+		5: return road_sign(pos, yaw)
+		6: return bench(pos, yaw)
+		7: return barrel(pos, BrickLib.C_BLUE if kind % 20 < 10 else BrickLib.C_RED)
+		8: return trough(pos, yaw)
+		_: return crop_patch(pos)
+
+
 # [BS:BUILD:TOWN:END]

@@ -24,7 +24,7 @@ const BAND_RED    := 12.0
 
 # [BS:ECONOMY:RISK_BANDS:END]
 
-@export var damage_radius: float = 8.0
+@export var damage_radius: float = 9.5
 @export var suction_radius: float = 26.0
 @export var lift_radius: float = 6.0
 @export var move_speed: float = 4.6
@@ -41,6 +41,10 @@ var _waypoints: PackedVector3Array = PackedVector3Array()
 var _wp: int = 0
 var _t: float = 0.0
 var _wobble := Vector3.ZERO
+# Corridor mode: the storm travels a route instead of looping an arena, so it
+# is always arriving at ground it has not already eaten.
+var corridor_mode: bool = false
+var corridor_drift: float = 22.0
 
 
 func _ready() -> void:
@@ -251,6 +255,10 @@ func _physics_process(delta: float) -> void:
 # - It loops, so a level never runs out of storm.
 # ============================================================================
 func _advance_path(delta: float) -> void:
+	if corridor_mode:
+		global_position.z += move_speed * delta
+		global_position.x = sin(_t * 0.16) * corridor_drift + cos(_t * 0.071) * corridor_drift * 0.4
+		return
 	if _waypoints.size() < 2:
 		return
 	var target := _waypoints[_wp]
