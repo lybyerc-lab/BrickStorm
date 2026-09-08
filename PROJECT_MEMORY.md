@@ -1,133 +1,81 @@
 # BrickStorm Project Memory
 
-This file is the durable project memory for the OpenAI/ChatGPT implementation. Read it before changing gameplay, architecture, art direction, controls, level structure, or content.
+This file is durable project memory for the OpenAI/ChatGPT implementation. Read it before changing gameplay, architecture, art direction, controls, levels, or content.
 
 ## Identity
 
-- **The game concept is LEGO: Twister.**
-- **BrickStorm is only the development codename.**
-- The project should feel like an early Traveller's Tales LEGO game built around the story, locations, vehicles, storm chasing, destruction, comedy, and spectacle of the original *Twister* film.
-- A feature that makes the project more generic but less recognizably LEGO: Twister is a regression, even if it is technically impressive.
+- The game concept is LEGO: Twister.
+- BrickStorm is only the development codename.
+- The target feel is a classic early Traveller's Tales-style LEGO adaptation of the original Twister film.
+- Recognizable Twister situations, slapstick comedy, smashable scenery, studs, rebuilds, character abilities, arcade vehicles, secrets, replay, and a tornado that rearranges the world are the creative center.
+- A technically impressive feature that makes the game more generic but less recognizably LEGO: Twister is a regression.
 
-## Primary Creative Reference
+## Primary gameplay language
 
-Use the classic LEGO-game language associated with early Traveller's Tales titles such as LEGO Star Wars, LEGO Indiana Jones, and LEGO Pirates of the Caribbean as conceptual design precedent:
+The recurring verbs are smash, collect, build, interact, drive, discover, switch abilities, and replay.
 
-- readable third-person action
-- slapstick visual comedy
-- smash almost everything
-- collectible studs bursting from scenery
-- rebuild broken pieces into useful or ridiculous contraptions
-- character-specific abilities
-- vehicles with arcade handling
-- authored story levels
-- hub exploration
-- secrets, collectibles, and replay
-- Free Play-style reasons to revisit completed levels
-- exaggerated physical comedy rather than realism-first simulation
+The world should reward curiosity with studs, jokes, secrets, alternate routes, destructible set pieces, unlocks, and Free Play-style reasons to revisit completed levels.
 
-Use those ideas and patterns as inspiration. Do not copy proprietary source code, ripped assets, movie footage, dialogue dumps, music, logos, or other protected production content.
+## Twister-specific direction
 
-## Twister-Specific North Star
+Prioritize Wakita, the storm-chaser convoy, Dorothy-style probe equipment, Oklahoma farms and roads, barns, utilities, roadside structures, drive-in destruction, storm aftermath, escalating tornado encounters, and the F5 finale.
 
-The tornado is not background weather. It is the level's moving villain and world-rearrangement system.
+The tornado is not background weather. It is the moving villain and world-rearrangement system.
 
-The game should repeatedly turn recognizable Twister situations into LEGO gameplay:
+Movie moments come first. Mechanics should support those moments rather than replace them with arbitrary mission filler.
 
-- Wakita as the principal hub and recovery space
-- the storm-chaser convoy
-- Dorothy-style probe equipment and deployment
-- storm pursuit and vehicle sequences
-- farms, roads, roadside structures, utility infrastructure, barns, and small-town Oklahoma
-- drive-in destruction
-- storm aftermath and rebuilding
-- escalating tornado encounters
-- the F5 finale
-- cows treated with the seriousness appropriate to airborne livestock, which is none
+## Construction and destruction
 
-Movie moments come first. Mechanics should serve those moments rather than replacing them with arbitrary missions.
+The world should look built to be touched and smashed in a traditional LEGO game. The shared construction library supports studs, plates, bricks, tiles, slopes, arches, posts, round parts, wheels, structural modules, intact states, build animation, authored break clusters, and rebuild states.
 
-## Construction and Destruction Language
+Large hero structures should break in readable authored stages while staying inside mobile fragment and stud budgets.
 
-The world should look and behave as though it was built to be smashed in a traditional LEGO game.
+The storm-probe construction sequence is user-rated **5/5** and is now regression-sensitive. Preserve its readable staged snap/build rhythm as the reference for important rebuildables.
 
-Construction-library priorities include:
+A successful build animation is not the end of a buildable. Whenever it fits the level, the completed object should become a usable machine, tool target, traversal change, puzzle state, secret route, or later-level dependency. Building should change what the player can do.
 
-- studs, plates, bricks, tiles, slopes, arches, posts, round elements, wheels, and structural modules
-- Oklahoma clapboard walls and farm structures
-- barn walls, roofs, gables, sheds, fences, signs, mailboxes, troughs, tractors, utility poles, water towers, storefronts, drive-in structures, weather equipment, and vehicle assemblies
-- reusable assemblies that can support intact, build, destruction, and rebuild states
-- authored hero destruction for large structures plus budgeted procedural fragments and studs
-- readable silhouettes and exaggerated break behavior over sterile CAD accuracy
+Contextual tools are part of the game language. Prefer classic LEGO-style world interactions such as wrench repairs, scanning, digging, cutting, levering, or assembling over inventory-heavy simulation. On mobile, use the existing contextual ACTION path where possible instead of multiplying permanent buttons.
 
-The construction library exists to make LEGO: Twister easier to author. It is not an end in itself.
+## Approved technical decisions
 
-## Current Technical Baseline
+- Engine: Godot 4.7.2 stable.
+- Platform priority: Android/mobile first, landscape.
+- The phone is an acceptance device, not the compiler.
+- Every release candidate must pass real Godot runtime tests before it reaches the user.
+- Final ZIPs are clean-extracted and retested before release.
+- Truck control is user-rated 5/5 and is regression-sensitive.
+- Road crossing is user-rated 5/5 and is regression-sensitive.
+- Vehicle steering uses the joystick as a screen-space heading command for the vehicle nose.
+- Global physical-fragment and stud budgets are intentional mobile constraints.
+- Latest physical-phone feel ratings: barn destruction **4/5**, storm-probe build **5/5**, overall LEGO-game feel **4/5**.
 
-- Engine: **Godot 4.7.2**
-- Platform priority: **Android/mobile first**, landscape
-- Real Godot engine testing is required before release candidates are handed to the user.
-- Final packaged ZIPs are clean-extracted and retested, not merely tested in the working directory.
-- Mobile performance budgets for physical fragments and studs are intentional and should not be discarded casually.
+## Branch ownership
 
-### Approved control decisions
+Repository: lybyerc-lab/BrickStorm
 
-These are currently user-accepted and should be treated as regression-sensitive:
+- main is neutral/shared territory.
+- openai/brickstorm is the OpenAI/ChatGPT implementation line.
+- openai/construction-library is the OpenAI construction-library feature line.
+- Other implementations, including Claude, use their own branches.
+- Do not modify, merge, rewrite, or cherry-pick another implementation's branch without explicit user instruction.
 
-- Character movement was improved after early testing and is currently acceptable.
-- **Truck control: 5/5 user rating.**
-- **Road crossing: 5/5 user rating.**
-- Vehicle steering model: the joystick direction is a **screen-space heading command for the vehicle's nose**. Pull the stick where the player wants the front of the truck to point. The vehicle turns toward that direction and then moves into it.
-- Do not silently revert to camera-relative gas/brake steering, tank controls, or local-forward-only steering.
-- Cow riding/charging is part of the evolving playable sandbox and should use the same readable heading language where appropriate.
+## Release discipline
 
-## Current Gameplay Direction
+Before a user-facing release candidate:
 
-The project has moved beyond a foundation-only prototype. The desired trajectory is now **more game**:
+1. run source/static validation;
+2. run the pinned real Godot 4.7.2 engine gate;
+3. exercise relevant gameplay systems and scene lifecycle;
+4. run touch/input regression tests when applicable;
+5. package the source;
+6. extract the exact final ZIP into a clean directory;
+7. rerun required source and engine tests against that copy;
+8. publish only after those gates pass.
 
-- more smashables
-- denser but mobile-safe destruction effects
-- more buildables with gameplay consequences
-- more authored environmental set pieces
-- more secrets and collectible rewards
-- more character and vehicle variety
-- more story levels
-- more tornado-driven environmental rearrangement
-- more classic LEGO-game comedy and replay value
+Avoid public version churn for internal failed attempts.
 
-Do not spend multiple releases polishing isolated technical systems while the playable content remains thin.
-
-## Branch Ownership
-
-Repository: `lybyerc-lab/BrickStorm`
-
-- `main` is neutral/shared territory.
-- `openai/brickstorm` is the OpenAI/ChatGPT implementation line.
-- `openai/construction-library` is the OpenAI construction-library feature line.
-- Claude or other implementations must use their own branches.
-- Do not modify, merge, rewrite, or cherry-pick another implementation's branch unless the user explicitly asks for comparison or integration.
-
-## Release Discipline
-
-The phone is an acceptance device, not the compiler.
-
-Before a release candidate is handed to the user:
-
-1. run source/static gates;
-2. run the real Godot 4.7.2 engine gate;
-3. load and exercise relevant scenes and systems;
-4. run touch/input regression tests where applicable;
-5. package the project;
-6. extract the exact final ZIP to a clean directory;
-7. rerun the required validation and Godot tests against that packaged copy;
-8. only then publish the candidate.
-
-Avoid version-number churn for every internal attempt. Work internally until a candidate deserves a user-facing version.
-
-## Decision Rule
+## Decision rule
 
 When choosing between two implementations, prefer the one that better answers:
 
-> **Would this feel at home in a classic LEGO game adaptation of Twister?**
-
-If the answer is no, reconsider the feature before adding it.
+Would this feel at home in a classic LEGO game adaptation of Twister?
