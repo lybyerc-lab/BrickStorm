@@ -16,28 +16,30 @@ The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Re
 
 ## Current sealed baseline
 
-BrickStorm Foundation **0.3.2** is the current clean-package-tested OpenAI release candidate.
+BrickStorm Foundation **0.3.3** is the current clean-package-tested OpenAI release candidate.
 
-The 0.3.2 feel-first pass preserves the accepted 5/5 truck control and road crossing while adding cause-aware barn destruction choreography, staged stud spills, visible scattered storm-probe parts and multi-phase assembly, persistent opening stud trails, smashable scarecrows, and a more readable original brick-toy player silhouette.
+0.3.3 preserves the user-rated 5/5 truck control, 5/5 road crossing, and 5/5 storm-probe build rhythm while adding the first complete contextual-tool and usable-buildable loop: acquire a wrench, build the farm generator, use the wrench through ACTION, power the generator, and permanently open a gated equipment cache. Built weather machines also remain useful after assembly.
 
-Exact-package verification for 0.3.2 completed with:
+Exact-package verification for 0.3.3 completed with:
 
-- 59 tagged GDScripts
-- 33 scenes
-- 43/43 behavior contracts
+- 63 tagged GDScripts
+- 36 authored scene/resource files
+- 46/46 behavior contracts
 - real Godot 4.7.2 import/runtime/content/soak gates
 - graphical touch tests at 1280x720, 1920x1080, and 2400x1080
-- 231/231 manifest entries unchanged after clean-package validation and Godot testing
+- 247/247 manifest entries unchanged after clean-package validation and Godot testing
 
-Archive SHA-256: `e45af121f4d3d5a5c7c422e56ec937a5145fcba479dbe033bccae8a4c7ddddb3`
+Archive SHA-256: `4bc3aa2bb134f359df972af513a56f52a207f63dcd19dc4c654baea5120b3d54`
 
 ## Current development focus
 
-Raise the subjective LEGO-game feel above the user's 0.3.1 ratings of 3/5 for barn destruction, probe build, and overall feel. Favor readable authored spectacle, construction/destruction rhythm, environmental density, secrets, and Twister-specific set pieces over additional foundation abstraction.
+Turn more successful LEGO-style build sequences into useful machines, tools, traversal changes, secrets, and later mission dependencies. Contextual tools should remain simple world abilities rather than inventory simulation, and the existing ACTION input should be preferred on mobile when it stays readable.
+
+Latest physical-device ratings before 0.3.3 are barn destruction 4/5, storm-probe build 5/5, LEGO-game feel 4/5, truck control 5/5, and road crossing 5/5.
 
 ## Repository completeness
 
-This GitHub branch is still a curated workstream mirror, not yet a byte-for-byte mirror of the entire packaged 0.3.2 source tree. Do not claim otherwise. The sealed ZIP and its manifest remain the authoritative complete release snapshot until full repository migration is explicitly completed and verified.
+This GitHub branch is still a curated workstream mirror, not yet a byte-for-byte mirror of the entire packaged 0.3.3 source tree. Do not claim otherwise. The sealed ZIP and its manifest remain the authoritative complete release snapshot until full repository migration is explicitly completed and verified.
 
 ## Release discipline
 
