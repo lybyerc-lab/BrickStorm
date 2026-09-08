@@ -19,17 +19,24 @@ more it pays.**
 
 ## The inversion this game exists to deliver
 
-The LEGO games let the player smash the world. **BRICKSTORM makes the tornado
-smash it, and pays the player to loot the debris while it is still moving.**
+*Revised 2026-09-08 by director decision — see `Docs/DECISION_LOG.md`.*
 
-That single reversal is the reason this project exists. It is not a stylistic
-preference and it is not negotiable. Any proposal that returns the player to
-being the primary agent of destruction — a bigger smash attack, a destruction
-combo meter, a "power up the tornado" mechanic — has quietly rebuilt a different
-game and must be refused at the design stage, not fixed later.
+You smash everything, like every LEGO game. **And the tornado smashes it harder,
+and pays more for the pieces.**
 
-Bill's shoulder-charge exists **only** as a character ability gate. It is not the
-game's destruction model and must never grow into one.
+- **Player smash** is ungated, always available, and pays at the player's current
+  band — which, away from the funnel, is ×1.
+- **Funnel debris** pays ×2 to ×5.
+
+That gradient is the reason this project exists, and it is what must not be
+negotiated away. The player smashing freely is a pleasure the genre is built on
+and is now first-class. But the funnel must always remain the place where the
+money is: any change that makes safe, player-driven destruction as lucrative as
+working the blast radius has dissolved the game into a generic smash-'em-up and
+must be refused at the design stage.
+
+The test is simple. **If a player can get rich without ever going near the
+storm, the design has drifted.**
 
 ---
 
@@ -67,9 +74,37 @@ to guess what a position is worth.
 
 ### 6. Mobile is the primary design target
 
-Not a port target. Two thumbs, no camera control, one context button. Any
-mechanic that cannot be operated by a thumb on a phone held in landscape is not
-finished, regardless of how well it plays on a desktop.
+Not a port target. Two thumbs, no camera control, **three action buttons —
+SMASH, BUILD, JUMP**. SMASH and JUMP never change meaning; only BUILD is
+contextual. BRACE is not a button: release the stick in high wind and the player
+digs in.
+
+Any mechanic that cannot be operated by a thumb on a phone held in landscape is
+not finished, regardless of how well it plays on a desktop. Vehicles obey this
+too — the stick is a heading, not a steering wheel, and there is no separate
+accelerator, brake, or reverse.
+
+*Revised 2026-09-08 by director decision.*
+
+### 7. Smashing everything, and the joke
+
+*Added 2026-09-08 by director decision.*
+
+Two things carry the genre, and neither is a polish task:
+
+**Everything breaks, and breaking it is a pleasure.** Smashing is never gated
+behind a character, a resource, or a cooldown the player can feel. If a thing
+looks built, the player should be able to hit it, drive through it, or watch the
+storm take it.
+
+**It is a silent comedy.** Nobody speaks. Comic-book words pop at every impact.
+Cows moo when the funnel throws them and land completely fine. The outhouse has
+an occupant. A minifig that gets caught explodes into its own bricks and
+reassembles with an annoyed shrug.
+
+The humour is load-bearing: it is what makes a tornado game joyful rather than
+grim, and it is the reason Law 1 exists. A build that is mechanically correct and
+has no jokes in it has failed this pillar.
 
 ---
 
@@ -116,6 +151,7 @@ ability gates, and a build-and-deploy objective that closes the loop.
 - Free Play with the full roster
 - A hub the studs are spent in
 - Audio: a roar that scales with proximity, and silent-comedy pantomime
+- Vehicles for the convoy, and a chase level built around driving
 - Physically accepted on the target Android device in landscape
 
 ---
@@ -148,6 +184,8 @@ replace it:
 - **Not a combat game.** There are no enemies. The response to the storm is a
   media circus, not a battle.
 - **Not a builder.** Building is a reward beat with a jingle, not a creative mode.
+- **Not a generic smash-'em-up.** The player smashes everything, but the funnel
+  is always where the value is. See the test at the end of "The inversion".
 - **Not photorealistic.** It is a brick toy, deliberately.
 - **Not a licensed product.** See "Naming" below.
 
@@ -164,6 +202,9 @@ Do not relitigate these without director approval:
 | Orientation | Landscape only |
 | Primary platform | Android; web is the fast playtest lane |
 | Camera | Auto-framed, fixed angle, no player control |
+| Controls | Three buttons: SMASH, BUILD, JUMP. BRACE is automatic. *(2026-09-08)* |
+| Vehicles | Fully drivable, not scripted or on-rails. *(2026-09-08)* |
+| Player destruction | First-class and ungated, paying at the current band. *(2026-09-08)* |
 | Destruction model | Cheap visuals until torn; `RigidBody3D` only once loose |
 | Vortex forces | Accelerations, not forces — the mass factor cancels |
 | Branch policy | `main` neutral; this is the Claude branch; `openai/*` untouched |

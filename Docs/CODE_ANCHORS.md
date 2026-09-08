@@ -85,6 +85,8 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 ### Player
 
+- `[BS:PLAYER:SMASH]` — `scripts/main.gd` — player-driven destruction; ungated, always available
+- `[BS:PLAYER:JUMP]` — `scripts/player.gd` — the jump
 - `[BS:PLAYER:CHARACTERS]` — `scripts/player.gd` — ability gates per character
 - `[BS:PLAYER:MOVEMENT]` — `scripts/player.gd` — movement under wind
 - `[BS:PLAYER:BRACE]` — `scripts/player.gd` — brace and lift immunity
@@ -94,9 +96,21 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 - `[BS:UI:HUD]` — `scripts/hud.gd` — readouts and layout
 - `[BS:UI:MULTIPLIER]` — `scripts/hud.gd` — the dominant HUD element
-- `[BS:UI:CONTEXT_BUTTON]` — `scripts/hud.gd` — the one button and its live label
+- `[BS:UI:ACTION_BUTTONS]` — `scripts/hud.gd` — the three buttons; only BUILD is contextual
 - `[BS:UI:SWAP]` — `scripts/hud.gd` — character portraits
 - `[BS:UI:TOUCH_STICK]` — `scripts/virtual_stick.gd` — floating virtual stick
+
+### Vehicles
+
+- `[BS:VEHICLE:OCCUPANCY]` — `scripts/vehicle.gd` — boarding and alighting
+- `[BS:VEHICLE:DRIVE]` — `scripts/vehicle.gd` — arcade handling; the stick is a heading
+- `[BS:VEHICLE:RAM]` — `scripts/vehicle.gd` — driving through scenery destroys it
+
+### Comedy
+
+- `[BS:COMEDY:VOCABULARY]` — `scripts/comedy.gd` — the onomatopoeia word banks
+- `[BS:COMEDY:POPUPS]` — `scripts/comedy.gd` — floating comic-book words
+- `[BS:COMEDY:GAGS]` — `scripts/main.gd` — flying livestock and the outhouse
 
 ### Camera
 

@@ -12,6 +12,8 @@ enum Character { JO, BILL }
 
 const GRAVITY := 22.0
 const TUMBLE_TIME := 2.2
+const JUMP_SPEED := 9.4
+const AUTO_BRACE_WIND := 9.0
 
 var character: int = Character.JO
 var braced: bool = false
@@ -19,6 +21,7 @@ var move_input := Vector2.ZERO
 var carrying: Node3D = null
 var tumble_timer: float = 0.0
 var ability_timer: float = 0.0
+var driving: Node = null
 
 var _rigs: Dictionary = {}
 var _visual_root: Node3D = null
@@ -72,8 +75,10 @@ func magnet_range() -> float:
 	return base
 
 
-func can_smash() -> bool:
-	return character == Character.BILL
+# Everyone smashes. Smashing everything is the point (North Star pillar 7) and
+# must never be gated behind a character. Bill's gate is REACH, not permission.
+func smash_radius() -> float:
+	return 4.6 if character == Character.BILL else 3.4
 
 
 # [BS:PLAYER:CHARACTERS:END]
@@ -84,6 +89,9 @@ func can_smash() -> bool:
 # Invariants:
 # - Bracing trades ALL movement for the ability to hold ground. That trade
 #   is the mechanic; a brace that still allows movement is not a brace.
+# - It is AUTOMATIC, not a button: release the stick in high wind and the
+#   player digs in. Director decision 2026-09-08 spent the button budget on
+#   SMASH / BUILD / JUMP. See Docs/DECISION_LOG.md.
 # - Bill's resistance is a character ability gate (BS:PLAYER:CHARACTERS),
 #   not a general buff.
 # - Immunity to lift is the ONLY thing standing between the player and
@@ -133,6 +141,22 @@ func tumble() -> void:
 # [BS:LAW:NO_FAIL:END]
 
 
+# ============================================================================
+# [BS:PLAYER:JUMP]
+# Purpose: The jump. Always available, never contextual.
+# Invariants:
+# - Refused only while tumbling or driving. A player who presses JUMP and
+#   nothing happens is a player who thinks the game is broken.
+# - Deliberately generous: this is a toy, not a precision platformer.
+# ============================================================================
+func jump() -> void:
+	if tumble_timer > 0.0 or driving != null:
+		return
+	if is_on_floor():
+		velocity.y = JUMP_SPEED
+# [BS:PLAYER:JUMP:END]
+
+
 func carry(node: Node3D) -> void:
 	carrying = node
 
@@ -160,9 +184,19 @@ func _physics_process(delta: float) -> void:
 	if t != null:
 		wind = t.wind_at(global_position)
 
+	if driving != null:
+		_visual_root.visible = false
+		if is_instance_valid(driving):
+			global_position = (driving as Node3D).global_position
+		return
+	_visual_root.visible = true
+
 	if tumble_timer > 0.0:
 		_tumbling(delta)
 		return
+
+	# BRACE is not a button: release the stick in high wind and you dig in.
+	braced = move_input.length() < 0.15 and wind.length() > AUTO_BRACE_WIND and is_on_floor()
 
 	var planar := Vector3.ZERO
 	if not braced:
@@ -173,7 +207,7 @@ func _physics_process(delta: float) -> void:
 	velocity.z = planar.z
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
-	else:
+	elif velocity.y <= 0.0:
 		velocity.y = 0.0
 
 	move_and_slide()

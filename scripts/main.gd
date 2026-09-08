@@ -12,6 +12,7 @@ const MAX_LOOSE := 110
 const TEAR_BUDGET := 5
 const BRICK_LIFETIME := 6.0
 const BUILD_TIME := 2.4
+const FUNNEL_CLEARANCE := 20.0
 
 enum Phase { LOOT, BUILD, CARRY, DEPLOY, WON }
 
@@ -25,6 +26,15 @@ var critter_root: Node3D
 
 var structures: Array[Structure] = []
 var debris: Array = []
+var vehicles: Array[Vehicle] = []
+var comedy: Comedy
+var driving: Vehicle = null
+var outhouse: Structure = null
+var _outhouse_popped: bool = false
+var _cow_air: Dictionary = {}
+var _force_input: bool = false
+var _forced_input := Vector2.ZERO
+var _cam_dir := Vector3(0, 0, 1)
 
 var score: int = 0
 var phase: int = Phase.LOOT
@@ -35,7 +45,7 @@ var dorothy: Node3D
 var dorothy_deployed: bool = false
 
 var context_action: String = "BRACE"
-var ctx_held: bool = false
+var build_held: bool = false
 var _last_ctx_press: float = -10.0
 var demo_mode: bool = false
 var capture_mode: bool = false
@@ -154,6 +164,17 @@ func _vbrick(sw: int, sd: int, h: float, colour: Color, pos: Vector3) -> Node3D:
 	return b
 
 
+func _add_vehicle(pos: Vector3, colour: Color, yaw: float) -> void:
+	var v := Vehicle.new()
+	v.body_colour = colour
+	add_child(v)
+	v.global_position = pos
+	v.heading = yaw
+	v.rotation.y = yaw
+	v.rammed.connect(_on_vehicle_ram)
+	vehicles.append(v)
+
+
 func _add_structure(st: Structure) -> void:
 	add_child(st)
 	structures.append(st)
@@ -179,10 +200,14 @@ func _build_town() -> void:
 	_add_structure(PropBuilder.farmhouse(Vector3(6, 0, 34)))
 	_add_structure(PropBuilder.barn(Vector3(-30, 0, -34)))
 
-	_add_structure(PropBuilder.pickup(Vector3(-13, 0, -4), BrickLib.C_RED, 0.4))
-	_add_structure(PropBuilder.pickup(Vector3(-9, 0, 1), BrickLib.C_WHITE, 1.9))
+	# Two parked wrecks as scenery, two you can actually get into.
 	_add_structure(PropBuilder.pickup(Vector3(20, 0, -8), BrickLib.C_BLUE, -0.7))
 	_add_structure(PropBuilder.pickup(Vector3(-2, 0, 30), BrickLib.C_YELLOW, 2.6))
+	_add_vehicle(Vector3(-13, 0.4, -4), BrickLib.C_RED, 0.4)
+	_add_vehicle(Vector3(-8, 0.4, 2), BrickLib.C_WHITE, 1.9)
+
+	outhouse = PropBuilder.outhouse(Vector3(9, 0, 4))
+	_add_structure(outhouse)
 
 	for p in [Vector3(-28, 0, 4), Vector3(-16, 0, 12), Vector3(8, 0, -30), Vector3(34, 0, -4),
 			Vector3(-40, 0, -18), Vector3(18, 0, 22), Vector3(-2, 0, -28), Vector3(40, 0, 24)]:
@@ -251,6 +276,10 @@ func _spawn_actors() -> void:
 	debris_root = Node3D.new()
 	debris_root.name = "Debris"
 	add_child(debris_root)
+
+	comedy = Comedy.new()
+	comedy.name = "Comedy"
+	add_child(comedy)
 
 	studfield = StudField.new()
 	studfield.name = "Studs"
@@ -345,8 +374,10 @@ func _spawn_objective_props() -> void:
 func _wire_hud() -> void:
 	hud = HUD.new()
 	add_child(hud)
-	hud.context_pressed.connect(_on_context_pressed)
-	hud.context_released.connect(_on_context_released)
+	hud.smash_pressed.connect(_on_smash_pressed)
+	hud.build_pressed.connect(_on_build_pressed)
+	hud.build_released.connect(_on_build_released)
+	hud.jump_pressed.connect(_on_jump_pressed)
 	hud.swap_to.connect(func(c: int) -> void: player.set_character(c); hud.set_active_character(c))
 	hud.set_active_character(player.character)
 	hud.set_objective("LOOT THE DEBRIS - %d STUDS" % STUD_GOAL)
@@ -360,6 +391,10 @@ func _process(delta: float) -> void:
 	_update_context()
 	_update_phase(delta)
 	_age_debris(delta)
+	_update_gags()
+	hud.set_bracing(player.braced)
+	if demo_mode:
+		_demo_smash(delta)
 	if capture_mode:
 		_tick_capture()
 
@@ -390,8 +425,17 @@ func _read_input() -> void:
 
 	if demo_mode:
 		v = _demo_input()
+	if _force_input:
+		v = _forced_input
 
-	player.move_input = v
+	if driving != null:
+		driving.move_input = v
+		player.move_input = Vector2.ZERO
+	else:
+		player.move_input = v
+
+	if Input.is_physical_key_pressed(KEY_SPACE):
+		_on_jump_pressed()
 
 
 # ============================================================================
@@ -403,21 +447,46 @@ func _read_input() -> void:
 #   a midpoint and loses the player off-screen entirely. This has
 #   already been a bug once.
 # - The player is always in frame. That is the one hard requirement.
+# - The camera orbits to sit OPPOSITE the funnel, so the framing is always
+#   player-foreground / storm-beyond and the funnel can never come between the
+#   lens and the player. Yaw follows the storm slowly; pitch is fixed.
+# - It is additionally kept FUNNEL_CLEARANCE metres clear of the funnel axis.
+#   The cone flares near the top, and a camera that drifts over it films the
+#   inside of the tornado. This has already been a bug once.
 # ============================================================================
 func _update_camera(delta: float) -> void:
 	var p := player.global_position
 	var t := tornado.funnel_pos()
-	# Lead toward the funnel, but never far enough to push the player out of
-	# frame - the camera is a director, not a control (§8).
-	var toward := t - p
-	toward.y = 0.0
-	if toward.length() > 26.0:
-		toward = toward.normalized() * 26.0
-	var mid := p + toward * 0.44
+
+	# Sit on the far side of the player FROM the funnel, so the shot is always
+	# player in the foreground with the storm beyond them - and the funnel can
+	# never end up between the lens and the player.
+	var want := Vector3(p.x - t.x, 0.0, p.z - t.z)
+	if want.length() < 0.5:
+		want = _cam_dir
+	want = want.normalized()
+	_cam_dir = _cam_dir.lerp(want, clampf(delta * 0.9, 0.0, 1.0)).normalized()
+
 	var d: float = clampf(p.distance_to(t), 14.0, 60.0)
-	var desired := mid + Vector3(0.0, 10.0 + d * 0.19, 13.0 + d * 0.27)
+	var back: float = 15.0 + d * 0.22
+	var height: float = 10.0 + d * 0.18
+	var desired := p + _cam_dir * back + Vector3(0, height, 0)
+
+	# Backstop: never inside the cone, which flares near the top.
+	var away := Vector3(desired.x - t.x, 0.0, desired.z - t.z)
+	if away.length() < FUNNEL_CLEARANCE:
+		away = (away.normalized() if away.length() > 0.01 else _cam_dir) * FUNNEL_CLEARANCE
+		desired.x = t.x + away.x
+		desired.z = t.z + away.z
+
 	camera.global_position = camera.global_position.lerp(desired, clampf(delta * 2.4, 0.0, 1.0))
-	camera.look_at(mid + Vector3(0, 2.5, 0), Vector3.UP)
+
+	# Look slightly past the player toward the storm.
+	var lead := t - p
+	lead.y = 0.0
+	if lead.length() > 22.0:
+		lead = lead.normalized() * 22.0
+	camera.look_at(p + lead * 0.32 + Vector3(0, 2.2, 0), Vector3.UP)
 
 
 # ------------------------------------------------------------------ contexts
@@ -446,9 +515,11 @@ func _nearest_structure(within: float) -> Structure:
 # ============================================================================
 func _update_context() -> void:
 	var p := player.global_position
-	var act := "BRACE"
+	var act := "--"
 
-	if phase == Phase.DEPLOY and player.carrying != null and anchor_node != null \
+	if driving != null:
+		act = "EXIT"
+	elif phase == Phase.DEPLOY and player.carrying != null and anchor_node != null \
 			and p.distance_to(anchor_node.global_position) < 3.5:
 		act = "DEPLOY"
 	elif phase >= Phase.CARRY and player.carrying == null and dorothy != null \
@@ -456,26 +527,35 @@ func _update_context() -> void:
 		act = "GRAB"
 	elif phase == Phase.BUILD and p.distance_to(build_spot.global_position) < 3.0:
 		act = "BUILD"
-	elif player.can_smash() and _nearest_structure(4.0) != null:
-		act = "SMASH"
+	elif _nearest_vehicle(4.5) != null:
+		act = "DRIVE"
 
 	context_action = act
 	hud.set_context(act)
 # [BS:OBJECTIVE:CONTEXT_ACTION:END]
 
 
-func _on_context_pressed() -> void:
+func _on_jump_pressed() -> void:
+	player.jump()
+
+
+func _on_smash_pressed() -> void:
 	var now := _elapsed
 	if now - _last_ctx_press < 0.32:
 		player.use_ability()
 		if player.character == Player.Character.JO:
 			hud.toast("READ THE SKY", Color(0.5, 0.85, 1.0))
 	_last_ctx_press = now
+	_do_smash()
 
-	ctx_held = true
+
+func _on_build_pressed() -> void:
+	build_held = true
 	match context_action:
-		"SMASH":
-			_do_smash()
+		"DRIVE":
+			_enter_vehicle()
+		"EXIT":
+			_exit_vehicle()
 		"GRAB":
 			player.carry(dorothy)
 			hud.toast("DOROTHY UP", BrickLib.C_YELLOW)
@@ -483,26 +563,96 @@ func _on_context_pressed() -> void:
 			hud.set_objective("CARRY DOROTHY TO THE ANCHOR")
 		"DEPLOY":
 			_do_deploy()
-		"BRACE":
-			player.braced = true
 
 
-func _on_context_released() -> void:
-	ctx_held = false
-	player.braced = false
+func _on_build_released() -> void:
+	build_held = false
 	if phase == Phase.BUILD:
 		build_progress = 0.0
 
 
+# ============================================================================
+# [BS:PLAYER:SMASH]
+# Purpose: Player-driven destruction. Available to everyone, at all times.
+# Invariants:
+# - Smashing everything is a headline pleasure of the genre and is never gated
+#   behind a character, a resource, or a cooldown (North Star pillar 7).
+# - It only ever tears SCENERY. Structures only - actors are untouchable, so a
+#   smash cannot break North Star Law 1.
+# - Player smash pays at the CURRENT band like any other stud. It is safe and
+#   always available; the funnel is where the multiplier lives. That contrast
+#   is what keeps the risk economy alive alongside free-for-all smashing.
+# - Every smash produces a comic-book word (BS:COMEDY:POPUPS). A silent smash
+#   is a wasted joke.
+# ============================================================================
 func _do_smash() -> void:
-	var s := _nearest_structure(4.0)
-	if s == null:
+	if driving != null:
 		return
-	var bodies := s.tear(player.global_position, 3.2, debris_root, 6)
+	var p := player.global_position
+	var reach := player.smash_radius()
+	var hit := 0
+	for st in structures:
+		if hit >= 10:
+			break
+		if st.is_rubble():
+			continue
+		if st.global_position.distance_to(p) > reach + 12.0:
+			continue
+		var bodies := st.tear(p, reach, debris_root, 10 - hit)
+		for b in bodies:
+			var away: Vector3 = (b.global_position - p).normalized()
+			b.apply_central_impulse((away + Vector3.UP * 0.9) * 6.5 * b.mass)
+			debris.append({"body": b, "age": 0.0})
+		hit += bodies.size()
+	if hit > 0:
+		comedy.smash(p + Vector3(0, 1.6, 0))
+# [BS:PLAYER:SMASH:END]
+
+
+func _enter_vehicle() -> void:
+	var v := _nearest_vehicle(4.5)
+	if v == null:
+		return
+	driving = v
+	player.driving = v
+	v.board(player)
+	hud.toast("FLOOR IT", BrickLib.C_YELLOW)
+
+
+func _exit_vehicle() -> void:
+	if driving == null:
+		return
+	var at := driving.alight()
+	driving = null
+	player.driving = null
+	player.global_position = at
+	player.velocity = Vector3.ZERO
+
+
+func _nearest_vehicle(within: float) -> Vehicle:
+	if driving != null:
+		return null
+	var best: Vehicle = null
+	var bd := within
+	for v in vehicles:
+		var d := v.global_position.distance_to(player.global_position)
+		if d < bd:
+			bd = d
+			best = v
+	return best
+
+
+func _on_vehicle_ram(st: Node, at: Vector3, force: float) -> void:
+	var structure := st as Structure
+	if structure == null:
+		return
+	var bodies := structure.tear(at, 3.6, debris_root, 10)
 	for b in bodies:
-		var away: Vector3 = (b.global_position - player.global_position).normalized()
-		b.apply_central_impulse((away + Vector3.UP * 0.8) * 5.5 * b.mass)
+		var away: Vector3 = (b.global_position - at).normalized()
+		b.apply_central_impulse((away + Vector3.UP * 0.7) * force * 0.9 * b.mass)
 		debris.append({"body": b, "age": 0.0})
+	if bodies.size() > 0:
+		comedy.ram(at + Vector3(0, 1.4, 0))
 
 
 func _do_deploy() -> void:
@@ -533,7 +683,7 @@ func _update_phase(delta: float) -> void:
 				hud.toast("ANCHOR SITE UNLOCKED", Color(0.4, 0.95, 1.0))
 				hud.set_objective("BUILD THE ANCHOR")
 		Phase.BUILD:
-			if ctx_held and context_action == "BUILD":
+			if build_held and context_action == "BUILD":
 				build_progress += delta * (3.0 if player.character == Player.Character.BILL else 1.0)
 				if build_progress >= BUILD_TIME:
 					_assemble_anchor()
@@ -562,6 +712,7 @@ func _assemble_anchor() -> void:
 			Vector3(cos(a) * 0.9, 0.4, sin(a) * 0.9))
 		brace.rotation = Vector3(0.5, -a, 0)
 		anchor_node.add_child(brace)
+	comedy.built(anchor_node.global_position + Vector3(0, 3.4, 0))
 	hud.toast("ANCHOR BUILT", Color(0.5, 1.0, 0.6))
 	hud.set_objective("GRAB DOROTHY FROM THE TRUCK")
 
@@ -626,7 +777,7 @@ func _age_debris(delta: float) -> void:
 
 
 func _check_lift() -> void:
-	if player.tumble_timer > 0.0 or player.immune_to_lift():
+	if driving != null or player.tumble_timer > 0.0 or player.immune_to_lift():
 		return
 	var d := tornado.funnel_pos().distance_to(player.global_position)
 	if d < tornado.lift_radius:
@@ -643,6 +794,7 @@ func _on_player_tumbled(at: Vector3) -> void:
 	var lost: int = int(float(score) * 0.20)
 	score -= lost
 	hud.toast("TUMBLED" if lost == 0 else "TUMBLED  -%d" % lost, Color(1.0, 0.5, 0.4))
+	comedy.tumble(at + Vector3(0, 2.0, 0))
 	var away := (player.global_position - tornado.funnel_pos()).normalized()
 	player.launch(away, 12.0)
 	if lost > 0:
@@ -652,6 +804,50 @@ func _on_player_tumbled(at: Vector3) -> void:
 # ---------------------------------------------------------------------- demo
 # Autopilot used for verification captures: walk the risk bands, loot, brace.
 # ============================================================================
+# [BS:COMEDY:GAGS]
+# Purpose: The running jokes - flying livestock and the outhouse.
+# Invariants:
+# - Cows MOO when the funnel throws them and are otherwise untouched. They are
+#   never harmed, never scored, never removed (North Star Law 1). The joke is
+#   that they are completely fine.
+# - The outhouse gag fires exactly once, and its occupant is a protected actor
+#   like any other minifig.
+# - Gags are cosmetic. Nothing here may change score, phase, or simulation.
+# ============================================================================
+func _update_gags() -> void:
+	if critter_root != null:
+		for c in critter_root.get_children():
+			var cow := c as RigidBody3D
+			if cow == null:
+				continue
+			var airborne := cow.global_position.y > 1.6
+			var was: bool = _cow_air.get(cow.get_instance_id(), false)
+			if airborne and not was and cow.linear_velocity.length() > 5.0:
+				comedy.moo(cow.global_position + Vector3(0, 1.2, 0))
+			_cow_air[cow.get_instance_id()] = airborne
+
+	if outhouse != null and not _outhouse_popped and outhouse.is_rubble():
+		_outhouse_popped = true
+		_pop_the_outhouse()
+
+
+# Somebody was in there. He is fine. He is not happy.
+func _pop_the_outhouse() -> void:
+	var fig := BrickLib.minifig(BrickLib.C_WHITE, BrickLib.C_BLUE, BrickLib.C_BROWN)
+	add_child(fig)
+	fig.global_position = outhouse.global_position + Vector3(0, 0.2, 0)
+	fig.set_meta("protected", true)
+	comedy.pop(outhouse.global_position + Vector3(0, 3.0, 0), "OCCUPIED!", Color(1.0, 0.85, 0.3), 150)
+
+	var away := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+	var tw := create_tween()
+	tw.tween_property(fig, "global_position",
+		fig.global_position + away * 14.0, 2.6).set_trans(Tween.TRANS_LINEAR)
+	fig.rotation.y = atan2(away.x, away.z)
+# [BS:COMEDY:GAGS:END]
+
+
+# ============================================================================
 # [BS:QA:AUTOPILOT]
 # Purpose: The demo driver used for capture runs.
 # Invariants:
@@ -660,6 +856,19 @@ func _on_player_tumbled(at: Vector3) -> void:
 # - It only chases loot still near the funnel - stale studs behind the
 #   storm are a trap that pulls the capture out of the bands.
 # ============================================================================
+# The autopilot smashes on a timer so captures show player destruction and the
+# comic-book words, not just the funnel doing the work.
+var _demo_smash_t: float = 0.0
+
+func _demo_smash(delta: float) -> void:
+	_demo_smash_t -= delta
+	if _demo_smash_t > 0.0:
+		return
+	_demo_smash_t = 0.75
+	if _nearest_structure(player.smash_radius() + 1.0) != null:
+		_do_smash()
+
+
 func _demo_input() -> Vector2:
 	var p := player.global_position
 	var band := tornado.band_of(p)
@@ -743,23 +952,83 @@ func _grab(name: String) -> void:
 # ============================================================================
 func _run_selftest() -> void:
 	await get_tree().process_frame
+	var fails: Array[String] = []
+	_force_input = true
+
+	# --- 1. driving and ramming ------------------------------------------
+	var truck: Vehicle = vehicles[0]
+	truck.global_position = Vector3(16, 0.4, -32)
+	truck.heading = 0.0
+	player.global_position = truck.global_position
+	_enter_vehicle()
+	if driving == null:
+		fails.append("could not board a vehicle")
+	var drive_from := truck.global_position
+	var torn_before_ram := _total_torn()
+	_forced_input = Vector2(0, 1)          # straight at the barn
+	for i in range(260):
+		await get_tree().physics_frame
+	var drove := truck.global_position.distance_to(drive_from)
+	var ram_torn := _total_torn() - torn_before_ram
+	if drove < 8.0:
+		fails.append("truck moved only %.1fm under full throttle" % drove)
+	if ram_torn <= 0:
+		fails.append("ramming a barn tore nothing")
+	_forced_input = Vector2.ZERO
+	_exit_vehicle()
+	if driving != null:
+		fails.append("could not leave the vehicle")
+
+	# --- 2. player smash --------------------------------------------------
+	await get_tree().physics_frame
+	player.global_position = Vector3(25, 0.4, -14)   # beside a silo
+	await get_tree().physics_frame
+	var torn_before_smash := _total_torn()
+	for i in range(6):
+		_do_smash()
+		await get_tree().physics_frame
+	var smash_torn := _total_torn() - torn_before_smash
+	if smash_torn <= 0:
+		fails.append("player SMASH tore nothing")
+
+	# --- 3. jump ----------------------------------------------------------
+	# Park the funnel well away first: a lingering tumble from the smash test
+	# would refuse the jump and make this assert order-dependent.
+	tornado.global_position = Vector3(160, 0, 160)
+	player.tumble_timer = 0.0
+	player.global_position = Vector3(0, 0.2, 12)
+	for i in range(20):
+		await get_tree().physics_frame
+	var y0 := player.global_position.y
+	var grounded := player.is_on_floor()
+	if not grounded:
+		fails.append("player never settled on the ground before the jump test")
+	player.jump()
+	for i in range(8):
+		await get_tree().physics_frame
+	if player.global_position.y <= y0 + 0.3:
+		fails.append("JUMP did not leave the ground")
+
+	# --- 4. the funnel, the economy --------------------------------------
 	tornado.global_position = Vector3(16, 0, -18)
 	player.global_position = Vector3(25, 0.2, -18)
+	_force_input = false
 	for i in range(700):
 		await get_tree().physics_frame
 
 	var torn := _total_torn()
-	print("SELFTEST structures=%d torn=%d debris=%d studs=%d score=%d phase=%d" % [
-		structures.size(), torn, debris.size(), studfield.studs.size(), score, phase])
-	var ok := true
 	if torn < 10:
-		print("SELFTEST FAIL: funnel tore only %d bricks" % torn)
-		ok = false
+		fails.append("funnel tore only %d bricks" % torn)
 	if studfield.studs.size() == 0 and score == 0:
-		print("SELFTEST FAIL: destruction produced no studs")
-		ok = false
-	print("SELFTEST OK" if ok else "SELFTEST FAILED")
-	get_tree().quit(0 if ok else 1)
+		fails.append("destruction produced no studs")
+
+	print("SELFTEST drove=%.1fm ram_torn=%d smash_torn=%d jump_from=%.2f torn=%d debris=%d studs=%d score=%d phase=%d" % [
+		drove, ram_torn, smash_torn, y0, torn, debris.size(),
+		studfield.studs.size(), score, phase])
+	for f in fails:
+		print("SELFTEST FAIL: %s" % f)
+	print("SELFTEST OK" if fails.is_empty() else "SELFTEST FAILED")
+	get_tree().quit(0 if fails.is_empty() else 1)
 # [BS:QA:SELFTEST:END]
 
 

@@ -172,9 +172,12 @@ design for the thumb.**
 ```
 
 - **Left thumb:** virtual stick, move. That's all it ever does.
-- **Right thumb:** one big button whose *meaning changes by proximity* and is labelled live:
-  **SMASH** near scenery · **BUILD** at a rubble pile · **GRAB** near a carryable ·
-  **BRACE** when wind is high (hold) · **ABILITY** on double-tap.
+- **Right thumb:** three buttons in a cluster.
+  **SMASH** (always live — smashing everything is the point; double-tap for ability) ·
+  **JUMP** (always live) ·
+  **BUILD** (the only contextual one, labelled live:
+  BUILD / GRAB / DEPLOY / DRIVE / EXIT).
+- **BRACE is not a button.** Release the stick in high wind and you dig in.
 - **Character swap:** tap the portrait. No menu.
 - **Camera:** auto-framed. It always keeps you and the funnel in shot, pulling back as the
   funnel closes. The camera is a director, not a control.
@@ -215,8 +218,10 @@ Everything else in this document is campaign content built on top of those six t
 
 ## 11. Open questions for the director
 
-1. **Vehicles** — full driving levels, or scripted chase sections? Driving doubles the control
-   surface on a phone. Recommendation: scripted, on-rails, steer-only.
+1. ~~**Vehicles** — full driving levels, or scripted chase sections?~~
+   **Resolved 2026-09-08: fully drivable.** The stick is a heading, not a wheel,
+   so it costs no extra control surface. Ramming tears scenery with force scaled
+   by speed. See `Docs/DECISION_LOG.md`.
 2. **Co-op** — the LEGO games are couch co-op. On mobile that means either same-device
    split (bad) or nothing. Recommendation: ship single-player with instant AI swap, and treat
    co-op as a stretch on tablet.

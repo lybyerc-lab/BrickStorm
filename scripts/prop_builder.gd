@@ -236,4 +236,21 @@ static func windmill(pos: Vector3) -> Structure:
 			Vector3(cos(a) * 1.0, 5.4 + sin(a) * 1.0, 0.6), Vector3(0, 0, a), false)
 	st.finish()
 	return st
+# The gag prop. Smashing it is the joke; see BS:COMEDY:GAGS.
+static func outhouse(pos: Vector3) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	var w := 4
+	var d := 4
+	var hw := float(w) * S * 0.5
+	var hd := float(d) * S * 0.5
+	var wood := BrickLib.C_BROWN
+	_wall(st, Vector3(-hw, 0, -hd), Vector3(1, 0, 0), w, 6, wood, 2)
+	_wall(st, Vector3(-hw, 0, hd), Vector3(1, 0, 0), w, 6, wood, 2)
+	_wall(st, Vector3(-hw, 0, -hd), Vector3(0, 0, 1), d, 6, wood, 2)
+	st.add_brick(4, 1, H * 5.0, BrickLib.C_TAN, Vector3(hw + 0.1, H * 2.5, 0), Vector3(0, PI * 0.5, 0))
+	st.add_brick(1, 1, 0.24, BrickLib.C_WHITE, Vector3(hw + 0.24, H * 4.2, 0), Vector3.ZERO, false)
+	st.add_brick(6, 6, 0.24, BrickLib.C_DGREY, Vector3(0, H * 6.2, 0))
+	st.finish()
+	return st
 # [BS:BUILD:TOWN:END]

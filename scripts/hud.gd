@@ -2,8 +2,10 @@
 class_name HUD
 extends CanvasLayer
 
-signal context_pressed
-signal context_released
+signal smash_pressed
+signal build_pressed
+signal build_released
+signal jump_pressed
 signal swap_to(character: int)
 signal ability_pressed
 
@@ -19,11 +21,13 @@ var mult_label: Label
 var studs_label: Label
 var objective_label: Label
 var toast_label: Label
-var ctx_panel: Panel
-var ctx_label: Label
+var btn_smash: Panel
+var btn_build: Panel
+var btn_jump: Panel
+var build_label: Label
+var brace_label: Label
 var portraits: Array = []
 
-var _ctx_touch: int = -1
 var _toast_timer: float = 0.0
 
 
@@ -31,7 +35,7 @@ func _ready() -> void:
 	layer = 10
 	_build_readouts()
 	_build_stick()
-	_build_context_button()
+	_build_action_buttons()
 	_build_portraits()
 
 
@@ -87,35 +91,75 @@ func _build_stick() -> void:
 
 
 # ============================================================================
-# [BS:UI:CONTEXT_BUTTON]
-# Purpose: The single context button whose meaning changes by proximity.
+# [BS:UI:ACTION_BUTTONS]
+# Purpose: The three action buttons - SMASH, BUILD, JUMP.
 # Invariants:
-# - ONE button. Its label always states what it will do right now:
-#   SMASH / BUILD / GRAB / BRACE / DEPLOY.
-# - Everything must be reachable by a right thumb in landscape
-#   (pillar 6). Do not add a second action button.
+# - Exactly three, clustered under the right thumb in landscape. SMASH and JUMP
+#   are ALWAYS available and never change meaning; only BUILD is contextual
+#   (BUILD / GRAB / DEPLOY / DRIVE / EXIT) and its label always states what it
+#   will do right now.
+# - SMASH is always live because smashing everything is the point (North Star
+#   pillar 7). It must never be gated behind a character, a resource, or a
+#   cooldown the player can feel.
+# - BRACE is NOT a button. It happens when the stick is released in high wind,
+#   so the player digs in by letting go - one fewer thing to press.
+# - Director decision 2026-09-08 replaced the earlier single context button.
+#   See Docs/DECISION_LOG.md.
 # ============================================================================
-func _build_context_button() -> void:
-	ctx_panel = Panel.new()
-	ctx_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	ctx_panel.size = Vector2(168, 168)
-	ctx_panel.position = Vector2(-208, -206)
+func _round_button(text: String, dia: float, pos: Vector2, tint: Color) -> Panel:
+	var p := Panel.new()
+	p.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	p.size = Vector2(dia, dia)
+	p.position = pos
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.98, 0.80, 0.12, 0.30)
+	sb.bg_color = Color(tint.r, tint.g, tint.b, 0.34)
 	sb.border_color = Color(1, 1, 1, 0.55)
 	sb.set_border_width_all(4)
-	sb.set_corner_radius_all(84)
-	ctx_panel.add_theme_stylebox_override("panel", sb)
-	ctx_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	ctx_panel.gui_input.connect(_on_ctx_input)
-	add_child(ctx_panel)
+	sb.set_corner_radius_all(int(dia * 0.5))
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(p)
 
-	ctx_label = _mk_label("SMASH", 26, Color(1, 1, 1))
-	ctx_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	ctx_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ctx_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	ctx_panel.add_child(ctx_label)
-# [BS:UI:CONTEXT_BUTTON:END]
+	var l := _mk_label(text, int(dia * 0.17), Color(1, 1, 1))
+	l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	p.add_child(l)
+	p.set_meta("label", l)
+	return p
+
+
+func _build_action_buttons() -> void:
+	# Thumb cluster. Nothing may touch the screen edge: SMASH clipped at the
+	# bottom in the first capture of this layout.
+	btn_jump = _round_button("JUMP", 152, Vector2(-196, -214), Color(0.35, 0.75, 1.0))
+	btn_smash = _round_button("SMASH", 162, Vector2(-376, -182), Color(1.0, 0.42, 0.20))
+	btn_build = _round_button("BUILD", 134, Vector2(-268, -378), Color(0.98, 0.80, 0.12))
+	build_label = btn_build.get_meta("label")
+
+	btn_smash.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventScreenTouch and e.pressed:
+			smash_pressed.emit())
+	btn_jump.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventScreenTouch and e.pressed:
+			jump_pressed.emit())
+	btn_build.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventScreenTouch:
+			if e.pressed:
+				build_pressed.emit()
+			else:
+				build_released.emit())
+
+	brace_label = _mk_label("", 34, Color(0.55, 0.85, 1.0))
+	brace_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	brace_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	brace_label.position = Vector2(-90, -86)
+	add_child(brace_label)
+
+
+func set_bracing(on: bool) -> void:
+	brace_label.text = "BRACED" if on else ""
+# [BS:UI:ACTION_BUTTONS:END]
 
 
 # ============================================================================
@@ -154,16 +198,6 @@ func _build_portraits() -> void:
 # [BS:UI:SWAP:END]
 
 
-func _on_ctx_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch:
-		if event.pressed and _ctx_touch == -1:
-			_ctx_touch = event.index
-			context_pressed.emit()
-		elif not event.pressed and event.index == _ctx_touch:
-			_ctx_touch = -1
-			context_released.emit()
-
-
 func set_active_character(c: int) -> void:
 	for i in range(portraits.size()):
 		portraits[i].modulate = Color(1, 1, 1, 1.0) if i == c else Color(0.55, 0.55, 0.6, 0.8)
@@ -194,8 +228,14 @@ func set_studs(n: int) -> void:
 	studs_label.text = "STUDS %s" % _commas(n)
 
 
+# An unavailable BUILD reads as a dimmed BUILD, never as punctuation.
 func set_context(text: String) -> void:
-	ctx_label.text = text
+	if text == "--":
+		build_label.text = "BUILD"
+		btn_build.modulate = Color(1, 1, 1, 0.38)
+	else:
+		build_label.text = text
+		btn_build.modulate = Color(1, 1, 1, 1.0)
 
 
 func set_objective(text: String) -> void:

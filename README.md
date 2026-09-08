@@ -44,9 +44,12 @@ A vertical slice, running, not a mockup:
 - a funnel that dismantles a farm town **in real time** into physics debris
 - distance-scaled stud value with the risk bands drawn on the ground
 - wind pressure and **BRACE** — so standing close is a decision, not a formality
-- **Jo** (READ THE SKY, wide magnet) and **Bill** (walks the RED band, smashes scenery)
+- **Jo** (READ THE SKY, wide magnet) and **Bill** (walks the RED band, longer smash reach)
+- **smash everything**, always, with any character — and drive a truck through it
+- **drivable pickups** that tear scenery apart at speed
+- comic-book words at every impact, mooing airborne cows, and an occupied outhouse
 - a build spot, an anchor, and a **DOROTHY** deployment to close the loop
-- one-stick + one-context-button touch control, landscape
+- one-stick + three-button touch control, landscape
 
 Verified by `--selftest`: 219 bricks torn, 72 in flight, 1,810 studs banked with
 multipliers applied, phase advanced. Screenshots in `Docs/shots/` are captures
@@ -64,7 +67,7 @@ from an actual run, not concept art.
 | **Portrait tap** | swap character |
 | **Camera** | auto-framed. There is no camera control, by design. |
 
-Desktop fallback: `WASD` / arrows to move.
+Desktop fallback: `WASD` / arrows to move, `Space` to jump.
 
 ## Running it
 
@@ -106,6 +109,7 @@ order:
 | [`Docs/NORTH_STAR.md`](Docs/NORTH_STAR.md) | The immovable target: the inversion, six pillars, the two laws, settled decisions, and what this game is **not**. Changes only by director approval. |
 | [`Docs/NO_DRIFT_POLICY.md`](Docs/NO_DRIFT_POLICY.md) | How it stays that way: the production summary, scope discipline, and an honest ranking of what each check can and cannot see. |
 | [`Docs/CODE_ANCHORS.md`](Docs/CODE_ANCHORS.md) | The 38 registered `[BS:...]` anchors, so high-risk logic is findable and its invariants live next to it. |
+| [`Docs/DECISION_LOG.md`](Docs/DECISION_LOG.md) | Append-only record of director decisions, each naming what it supersedes — so a deliberate reversal is never mistaken for drift. |
 | [`Docs/GAME_CONCEPT.md`](Docs/GAME_CONCEPT.md) | The full design: cast, campaign, collectibles, controls. |
 
 ### Checks, ranked by what they actually prove
@@ -135,7 +139,9 @@ anything.
 | `scripts/prop_builder.gd` | the farm town — barn, farmhouse, silo, water tower, windmill, drive-in |
 | `scripts/structure.gd` | destructible structures: cheap visuals until torn, rigid bodies after |
 | `scripts/tornado.gd` | the funnel — path, wind field, risk bands, debris vortex |
-| `scripts/player.gd` | two characters, brace, tumble, carry |
+| `scripts/player.gd` | two characters, jump, brace, tumble, carry |
+| `scripts/vehicle.gd` | drivable trucks — arcade handling and ramming |
+| `scripts/comedy.gd` | the joke layer: comic-book words and the running gags |
 | `scripts/stud_field.gd` | loose studs, magnet, collection value |
 | `scripts/hud.gd`, `virtual_stick.gd` | the two-thumb control scheme |
 | `scripts/main.gd` | world assembly, phases, camera, scoring |

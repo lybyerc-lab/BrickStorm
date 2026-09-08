@@ -12,8 +12,10 @@ invariants enforceable, and making the checks capable of failing.
 
 ## Production summary
 
-1. **The tornado destroys the world; the player loots it.** The player is never
-   promoted back to primary agent of destruction.
+1. **The player smashes everything, and the funnel pays more.** Player smash is
+   ungated and pays at the current band; funnel debris pays x2-x5. If a player
+   can get rich without going near the storm, the design has drifted.
+   *(Revised 2026-09-08 - see Docs/DECISION_LOG.md.)*
 2. **Nothing that moves is ever destroyed.** Enforced in code, not remembered.
 3. **There is no fail state, only a toll.** No lives, no game over, no progress loss.
 4. **Risk must be legible.** If a position's value is not readable at a glance,
@@ -22,26 +24,29 @@ invariants enforceable, and making the checks capable of failing.
    game. The funnel is the one deliberate exception.
 6. **The world stays bright; only the sky darkens.**
 7. **Mobile is the design target, not a port target.** Two thumbs, no camera
-   control, one context button.
+   control, three action buttons (SMASH, BUILD, JUMP). BRACE is automatic.
+   Vehicles steer by heading, not by wheel. *(Revised 2026-09-08.)*
 8. **Landscape only.** Any harness or capture viewport is wider than it is tall.
 9. **A build is not correct because it runs, and not correct because it compiles.**
-10. **Graphics are gameplay.** Readability of a brick, a band, or a multiplier is a
+10. **The joke is load-bearing.** A build that is mechanically correct and has no
+    jokes in it has failed. Comedy is not polish and is not cut for schedule.
+11. **Graphics are gameplay.** Readability of a brick, a band, or a multiplier is a
     mechanic, not a polish task.
-11. **The repository is the durable record.** Chat is working context. A decision
+12. **The repository is the durable record.** Chat is working context. A decision
     that is not committed here did not happen.
-12. **Code and the document describing it land in the same commit.** A document
+13. **Code and the document describing it land in the same commit.** A document
     updated later is a document that was wrong in between.
-13. **Anchors are the map.** High-risk logic carries a registered `[BS:...]` anchor
+14. **Anchors are the map.** High-risk logic carries a registered `[BS:...]` anchor
     (`Docs/CODE_ANCHORS.md`) so it can be found without reading everything.
-14. **Invariants live next to the code they constrain**, in the anchor header, not
+15. **Invariants live next to the code they constrain**, in the anchor header, not
     only in a design document nobody opens while editing.
-15. **The physical Android device is the final authority** for touch, heat,
+16. **The physical Android device is the final authority** for touch, heat,
     battery, audio, and readability. CI green is not acceptance.
-16. **Changes to the North Star require explicit director approval** and never
+17. **Changes to the North Star require explicit director approval** and never
     arrive as a side effect of implementation work.
-17. **External suggestions are advisory.** Including suggestions from another
+18. **External suggestions are advisory.** Including suggestions from another
     implementation in this repository.
-18. **Placeholder names stay flagged until replaced.** See North Star, Naming.
+19. **Placeholder names stay flagged until replaced.** See North Star, Naming.
 
 ---
 
