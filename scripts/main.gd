@@ -57,6 +57,11 @@ var _capture_i: int = 0
 var _capture_dir: String = "/home/user/brickstorm_shots"
 var _closeup: bool = false
 var _camera_locked: bool = false
+var playthrough: bool = false
+var _tel: Array = []
+var _tel_shot: float = 0.0
+var _tel_shots: int = 0
+const PLAYTHROUGH_SECONDS := 150.0
 var _demo_target := Vector3.ZERO
 var _elapsed: float = 0.0
 
@@ -66,7 +71,8 @@ func _ready() -> void:
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
 	capture_mode = args.has("--capture")
-	demo_mode = args.has("--demo") or args.has("--selftest") or capture_mode
+	playthrough = args.has("--playthrough")
+	demo_mode = args.has("--demo") or args.has("--selftest") or capture_mode or playthrough
 
 	_setup_environment()
 	_build_ground()
@@ -408,6 +414,8 @@ func _process(delta: float) -> void:
 	_update_phase(delta)
 	_age_debris(delta)
 	_update_gags()
+	if playthrough:
+		_tick_playthrough(delta)
 	_update_storm_audio()
 	hud.set_bracing(player.braced)
 	if demo_mode:
@@ -641,6 +649,7 @@ func _do_smash() -> void:
 			debris.append({"body": b, "age": 0.0})
 		hit += bodies.size()
 	if hit > 0:
+		_log_event("SMASH", "bricks=%d" % hit)
 		comedy.smash(p + Vector3(0, 1.6, 0))
 		audio.smash(p + Vector3(0, 1.2, 0), hit >= 5)
 # [BS:PLAYER:SMASH:END]
@@ -689,6 +698,7 @@ func _on_vehicle_ram(st: Node, at: Vector3, force: float) -> void:
 		b.apply_central_impulse((away + Vector3.UP * 0.7) * force * 0.9 * b.mass)
 		debris.append({"body": b, "age": 0.0})
 	if bodies.size() > 0:
+		_log_event("RAM", "bricks=%d force=%.0f" % [bodies.size(), force])
 		comedy.ram(at + Vector3(0, 1.4, 0))
 		audio.ram(at, force)
 
@@ -699,6 +709,7 @@ func _do_deploy() -> void:
 		return
 	pod.global_position = anchor_node.global_position + Vector3(0, 1.4, 0)
 	dorothy_deployed = true
+	_log_event("DEPLOY", "dorothy released")
 	audio.deployed(anchor_node.global_position)
 	hud.toast("DOROTHY DEPLOYED - HOLD THE ANCHOR", Color(0.5, 0.9, 1.0))
 	hud.set_objective("HOLD THE ANCHOR UNTIL THE FUNNEL PASSES")
@@ -719,6 +730,7 @@ func _update_phase(delta: float) -> void:
 		Phase.LOOT:
 			if score >= STUD_GOAL:
 				phase = Phase.BUILD
+				_log_event("PHASE", "BUILD unlocked at %d studs" % score)
 				audio.objective(player.global_position)
 				hud.toast("ANCHOR SITE UNLOCKED", Color(0.4, 0.95, 1.0))
 				hud.set_objective("BUILD THE ANCHOR")
@@ -752,6 +764,7 @@ func _assemble_anchor() -> void:
 			Vector3(cos(a) * 0.9, 0.4, sin(a) * 0.9))
 		brace.rotation = Vector3(0.5, -a, 0)
 		anchor_node.add_child(brace)
+	_log_event("BUILD", "anchor assembled")
 	comedy.built(anchor_node.global_position + Vector3(0, 3.4, 0))
 	audio.built(anchor_node.global_position)
 	hud.toast("ANCHOR BUILT", Color(0.5, 1.0, 0.6))
@@ -841,10 +854,12 @@ func _check_lift() -> void:
 # ============================================================================
 func _on_stud_collected(value: int, _band: int, at: Vector3) -> void:
 	score += value
+	_log_event("STUD", "+%d total=%d" % [value, score])
 	audio.stud(at)
 	if score >= TRUE_CHASER:
 		if not true_chaser_earned:
 			true_chaser_earned = true
+			_log_event("RATING", "TRUE CHASER at %d" % score)
 			audio.objective(player.global_position)
 			hud.toast("TRUE CHASER", BrickLib.C_YELLOW)
 			comedy.pop(player.global_position + Vector3(0, 3.0, 0),
@@ -857,6 +872,7 @@ func _on_player_tumbled(at: Vector3) -> void:
 	var lost: int = int(float(score) * 0.20)
 	score -= lost
 	hud.toast("TUMBLED" if lost == 0 else "TUMBLED  -%d" % lost, Color(1.0, 0.5, 0.4))
+	_log_event("TUMBLE", "-%d studs" % lost)
 	comedy.tumble(at + Vector3(0, 2.0, 0))
 	audio.tumble(at + Vector3(0, 1.0, 0))
 	var away := (player.global_position - tornado.funnel_pos()).normalized()
@@ -908,11 +924,13 @@ func _update_gags() -> void:
 			var airborne := cow.global_position.y > 1.6
 			var was: bool = _cow_air.get(cow.get_instance_id(), false)
 			if airborne and not was and cow.linear_velocity.length() > 5.0:
+				_log_event("GAG", "cow airborne")
 				comedy.moo(cow.global_position + Vector3(0, 1.2, 0))
 			_cow_air[cow.get_instance_id()] = airborne
 
 	if outhouse != null and not _outhouse_popped and outhouse.is_rubble():
 		_outhouse_popped = true
+		_log_event("GAG", "outhouse occupant")
 		_pop_the_outhouse()
 
 
@@ -930,6 +948,75 @@ func _pop_the_outhouse() -> void:
 		fig.global_position + away * 14.0, 2.6).set_trans(Tween.TRANS_LINEAR)
 	fig.rotation.y = atan2(away.x, away.z)
 # [BS:COMEDY:GAGS:END]
+
+
+# ============================================================================
+# [BS:QA:PLAYTHROUGH]
+# Purpose: Record a full round as a timestamped event log for cadence analysis.
+# Invariants:
+# - Records only what a PLAYER would perceive - a smash, a payout, a joke, a
+#   phase change. Internal bookkeeping is not an event, because the question
+#   this answers is "how often does something happen TO the player".
+# - The autopilot is not a player. It never hesitates, never explores and never
+#   gets bored, so the numbers here are an upper bound on event density and a
+#   lower bound on dead time. Read them as such.
+# - Diagnostic only. Nothing here may alter simulation, score, or phase.
+# ============================================================================
+func _log_event(kind: String, detail: String = "") -> void:
+	if not playthrough:
+		return
+	_tel.append({"t": _elapsed, "kind": kind, "detail": detail})
+
+
+func _tick_playthrough(delta: float) -> void:
+	_tel_shot += delta
+	if _tel_shot >= 18.0 and _tel_shots < 8:
+		_tel_shot = 0.0
+		_tel_shots += 1
+		_grab_plain("round_%d" % _tel_shots)
+	if _elapsed >= PLAYTHROUGH_SECONDS:
+		_dump_playthrough()
+
+
+func _grab_plain(name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(_capture_dir)
+	img.save_png("%s/%s.png" % [_capture_dir, name])
+
+
+func _dump_playthrough() -> void:
+	var f := FileAccess.open("%s/playthrough.log" % _capture_dir, FileAccess.WRITE)
+	for e in _tel:
+		f.store_line("%8.2f  %-10s %s" % [e["t"], e["kind"], e["detail"]])
+	f.store_line("---- summary ----")
+	f.store_line("duration        %.1f s" % _elapsed)
+	f.store_line("final score     %d" % score)
+	f.store_line("bricks torn     %d" % _total_torn())
+	f.store_line("phase reached   %d" % phase)
+	f.store_line("true chaser     %s" % str(true_chaser_earned))
+
+	var counts: Dictionary = {}
+	for e in _tel:
+		counts[e["kind"]] = int(counts.get(e["kind"], 0)) + 1
+	for k in counts:
+		f.store_line("%-15s %d  (%.1f/min)" % [k, counts[k], float(counts[k]) / _elapsed * 60.0])
+
+	# Dead time: the longest stretch with no player-facing feedback at all.
+	var worst := 0.0
+	var worst_at := 0.0
+	var prev := 0.0
+	for e in _tel:
+		var gap: float = e["t"] - prev
+		if gap > worst:
+			worst = gap
+			worst_at = prev
+		prev = e["t"]
+	f.store_line("longest silence %.1f s  (starting t=%.1f)" % [worst, worst_at])
+	f.close()
+	print("PLAYTHROUGH done: %d events over %.0fs" % [_tel.size(), _elapsed])
+	get_tree().quit()
+# [BS:QA:PLAYTHROUGH:END]
 
 
 # ============================================================================

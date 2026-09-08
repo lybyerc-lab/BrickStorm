@@ -143,6 +143,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 ### QA
 
 - `[BS:QA:SELFTEST]` — `scripts/main.gd` — the load-bearing behavioural gate
+- `[BS:QA:PLAYTHROUGH]` — `scripts/main.gd` — records a full round as a timestamped event log
 - `[BS:QA:CAPTURE]` — `scripts/main.gd` — screenshot capture
 - `[BS:QA:AUTOPILOT]` — `scripts/main.gd` — the demo driver used for captures
 
