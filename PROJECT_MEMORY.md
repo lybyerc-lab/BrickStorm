@@ -36,6 +36,14 @@ A successful build animation is not the end of a buildable. Whenever it fits the
 
 Contextual tools are part of the game language. Prefer classic LEGO-style world interactions such as wrench repairs, scanning, digging, cutting, levering, or assembling over inventory-heavy simulation. On mobile, use the existing contextual ACTION path where possible instead of multiplying permanent buttons.
 
+## Character feel and stud currency
+
+- Collectible score studs use four stable color/value tiers: **silver = 10, gold = 100, blue = 1,000, purple = 10,000**.
+- Do not reintroduce arbitrary collectible-stud values that make color stop communicating value.
+- On-foot movement must read as a classic brick-action character, not a Roblox-like capsule avatar.
+- Favor fast starts, hard stops, quick pivots, planted articulated strides, readable limb swing, and toy-weight jumping/landing over smooth inertial glide.
+- Character movement is still open for tuning until the user explicitly accepts it. Do not protect a merely functional movement model just because it passes automated tests.
+
 ## Approved technical decisions
 
 - Engine: Godot 4.7.2 stable.
