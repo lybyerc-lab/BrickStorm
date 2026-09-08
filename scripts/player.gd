@@ -49,21 +49,22 @@ func _ready() -> void:
 	_apply_character()
 
 
+# ============================================================================
+# [BS:PLAYER:CHARACTERS]
+# Purpose: Per-character ability gates - the core LEGO verb.
+# Invariants:
+# - Each character has exactly one thing nobody else has. Bill walks
+#   the RED band; Jo reads the sky and has the wide magnet.
+# - Levels are built as locks for these keys. Do not give a character
+#   a second headline ability to 'round them out' - that dissolves the
+#   gate and the swap stops mattering.
+# - Swapping is instant and never gated behind a menu.
+# ============================================================================
 func speed() -> float:
 	return 5.8 if character == Character.BILL else 7.2
 
 
 # Bill is the Extreme: he barely notices weather that flattens everyone else.
-func wind_resist() -> float:
-	if braced:
-		return 0.10
-	return 0.30 if character == Character.BILL else 1.0
-
-
-func immune_to_lift() -> bool:
-	return braced or character == Character.BILL
-
-
 func magnet_range() -> float:
 	var base := 3.6 if character == Character.BILL else 4.2
 	if character == Character.JO and ability_timer > 0.0:
@@ -74,6 +75,27 @@ func magnet_range() -> float:
 func can_smash() -> bool:
 	return character == Character.BILL
 
+
+# [BS:PLAYER:CHARACTERS:END]
+
+# ============================================================================
+# [BS:PLAYER:BRACE]
+# Purpose: Wind resistance and lift immunity - why standing close is a decision.
+# Invariants:
+# - Bracing trades ALL movement for the ability to hold ground. That trade
+#   is the mechanic; a brace that still allows movement is not a brace.
+# - Bill's resistance is a character ability gate (BS:PLAYER:CHARACTERS),
+#   not a general buff.
+# - Immunity to lift is the ONLY thing standing between the player and
+#   BS:LAW:NO_FAIL. It must never be granted permanently.
+# ============================================================================
+func wind_resist() -> float:
+	if braced:
+		return 0.10
+	return 0.30 if character == Character.BILL else 1.0
+func immune_to_lift() -> bool:
+	return braced or character == Character.BILL
+# [BS:PLAYER:BRACE:END]
 
 func set_character(c: int) -> void:
 	if c == character or tumble_timer > 0.0:
@@ -92,12 +114,23 @@ func use_ability() -> void:
 		ability_timer = 6.0        # READ THE SKY
 
 
+# ============================================================================
+# [BS:LAW:NO_FAIL]
+# Purpose: Enforcement point for North Star Law 2 - there is no fail state, only a toll.
+# Invariants:
+# - The player is carried up, spun, and set down. Never killed, never
+#   respawned, never sent to a retry screen.
+# - The toll is studs, which SCATTER and can be re-collected. Nothing
+#   is permanently lost.
+# - Do not add lives, health, or a damage model to the player.
+# ============================================================================
 func tumble() -> void:
 	if tumble_timer > 0.0:
 		return
 	tumble_timer = TUMBLE_TIME
 	braced = false
 	tumbled.emit(global_position)
+# [BS:LAW:NO_FAIL:END]
 
 
 func carry(node: Node3D) -> void:
@@ -110,6 +143,14 @@ func drop() -> Node3D:
 	return n
 
 
+# ============================================================================
+# [BS:PLAYER:MOVEMENT]
+# Purpose: Movement under wind pressure.
+# Invariants:
+# - Wind is added to intended movement rather than replacing it, so
+#   the player always retains some authority.
+# - A braced player does not move - that is the cost of bracing.
+# ============================================================================
 func _physics_process(delta: float) -> void:
 	if ability_timer > 0.0:
 		ability_timer -= delta
@@ -157,6 +198,14 @@ func _physics_process(delta: float) -> void:
 
 
 # Picked up, spun, and set back down. Nobody is ever destroyed.
+# [BS:PLAYER:MOVEMENT:END]
+# ============================================================================
+# [BS:PLAYER:TUMBLE]
+# Purpose: The carried-and-dropped state.
+# Invariants:
+# - Purely animation plus damping. It ends on a timer and always
+#   returns control - it can never trap the player.
+# ============================================================================
 func _tumbling(delta: float) -> void:
 	tumble_timer -= delta
 	if not is_on_floor():
@@ -170,6 +219,7 @@ func _tumbling(delta: float) -> void:
 	if tumble_timer <= 0.0:
 		_visual_root.rotation.x = 0.0
 		_visual_root.position.y = 0.0
+# [BS:PLAYER:TUMBLE:END]
 
 
 func launch(dir: Vector3, force: float) -> void:

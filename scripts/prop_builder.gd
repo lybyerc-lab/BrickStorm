@@ -7,6 +7,16 @@ const H := 0.6      # brick height    (BrickLib.BRICK_H)
 
 
 # A staggered brick wall running along `dir` from the `start` corner.
+# ============================================================================
+# [BS:BUILD:TOWN]
+# Purpose: The farm town prop set - every structure the funnel can take apart.
+# Invariants:
+# - Every prop is assembled from bricks at stud pitch (pillar 1).
+# - Courses are staggered like real brickwork; it is most of what
+#   makes a wall read as built rather than extruded.
+# - Props must survive being torn brick-by-brick, so no prop may rely
+#   on a single mesh for its silhouette.
+# ============================================================================
 static func _wall(st: Structure, start: Vector3, dir: Vector3, length_studs: int,
 		courses: int, color: Color, brick_len: int = 4, depth: int = 2) -> void:
 	var total := float(length_studs) * S
@@ -226,3 +236,4 @@ static func windmill(pos: Vector3) -> Structure:
 			Vector3(cos(a) * 1.0, 5.4 + sin(a) * 1.0, 0.6), Vector3(0, 0, a), false)
 	st.finish()
 	return st
+# [BS:BUILD:TOWN:END]

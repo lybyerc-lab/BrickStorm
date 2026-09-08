@@ -50,7 +50,15 @@ jobs:
         run: |
           "$GODOT" --headless --path . --import 2>&1 | tail -5
 
-      # The gate: the core loop must actually run, not merely compile.
+      # Structural gate: the anchor registry and the source must agree.
+      # This proves nothing about behaviour - see Docs/NO_DRIFT_POLICY.md.
+      - name: Verify code anchors
+        run: |
+          set -o pipefail
+          "$GODOT" --headless --path . --script res://tools/verify_anchors.gd 2>&1 | tee anchors.log
+          grep -q "ANCHORS OK" anchors.log
+
+      # The load-bearing gate: the core loop must actually run, not merely compile.
       - name: Self-test (core loop)
         run: |
           set -o pipefail

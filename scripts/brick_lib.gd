@@ -5,6 +5,15 @@
 class_name BrickLib
 extends RefCounted
 
+# ============================================================================
+# [BS:BUILD:PALETTE]
+# Purpose: Stud pitch, brick heights and the classic colour palette.
+# Invariants:
+# - Real LEGO proportions scaled 62.5x: 8mm stud pitch, 9.6mm brick.
+# - A minifig must land near 1.5m so it reads against a farmhouse.
+# - Palette stays bright and saturated. The SKY carries the dread,
+#   not the shading (North Star pillar 2).
+# ============================================================================
 # --- dimensions (metres) -----------------------------------------------------
 # Real LEGO: 8mm stud pitch, 9.6mm brick height, 3.2mm plate. Scaled up 62.5x
 # so a minifig lands near 1.5m and reads correctly against a farmhouse.
@@ -27,6 +36,8 @@ const C_BROWN  := Color(0.36, 0.22, 0.13)
 const C_TAN    := Color(0.83, 0.72, 0.51)
 const C_BLACK  := Color(0.11, 0.11, 0.12)
 const C_TRANS  := Color(0.55, 0.78, 0.88)
+
+# [BS:BUILD:PALETTE:END]
 
 static var _mats: Dictionary = {}
 static var _stud_mesh: CylinderMesh = null
@@ -57,6 +68,15 @@ static func stud_mesh() -> CylinderMesh:
 
 # Visual brick: a box plus a MultiMesh of studs on its top face.
 # One extra draw call per brick instead of one per stud.
+# ============================================================================
+# [BS:BUILD:BRICK]
+# Purpose: The visual brick: a box plus a MultiMesh of studs on its top face.
+# Invariants:
+# - Studs are visible on top surfaces. True brick construction is
+#   North Star pillar 1 - a box without studs is not a brick.
+# - One MultiMesh per brick, not one mesh per stud: an 8-stud brick
+#   costs 2 draw calls, not 9.
+# ============================================================================
 static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: bool = true) -> Node3D:
 	var root := Node3D.new()
 	var size := Vector3(sw * STUD, h, sd * STUD)
@@ -90,6 +110,17 @@ static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: b
 
 
 # A brick that has been torn loose: real rigid body, flung by the funnel.
+# [BS:BUILD:BRICK:END]
+# ============================================================================
+# [BS:LAW:NO_HARM]
+# Purpose: Enforcement point for North Star Law 1 - nothing that moves is destroyed.
+# Invariants:
+# - Debris is on collision layer 4 and masks only the world (layer 1).
+#   It CANNOT collide with the player (layer 2) or critters (layer 8).
+# - This is why a new hazard cannot hurt an actor by existing. Do not
+#   widen this mask to 'make debris feel weightier'.
+# - A brick becomes a body only when torn. See BS:DESTRUCTION:TEAR.
+# ============================================================================
 static func brick_body(sw: int, sd: int, h: float, color: Color) -> RigidBody3D:
 	var body := RigidBody3D.new()
 	body.mass = maxf(0.4, sw * sd * 0.22)
@@ -113,6 +144,13 @@ static func brick_body(sw: int, sd: int, h: float, color: Color) -> RigidBody3D:
 
 
 # The collectible stud: the classic 1x1 round plate silhouette.
+# [BS:LAW:NO_HARM:END]
+# ============================================================================
+# [BS:BUILD:STUD]
+# Purpose: The collectible stud - a 1x1 round plate silhouette.
+# Invariants:
+# - Must read as currency at a glance from the game camera.
+# ============================================================================
 static func stud_visual(color: Color) -> Node3D:
 	var root := Node3D.new()
 	var base := CylinderMesh.new()
@@ -135,6 +173,14 @@ static func stud_visual(color: Color) -> Node3D:
 
 
 # Minifig, built the way a minifig is actually built.
+# [BS:BUILD:STUD:END]
+# ============================================================================
+# [BS:BUILD:MINIFIG]
+# Purpose: Minifig assembly, built the way a minifig is actually built.
+# Invariants:
+# - Proportions stay minifig-correct: it is the scale reference for
+#   the whole world.
+# ============================================================================
 static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(0.96, 0.80, 0.19)) -> Node3D:
 	var root := Node3D.new()
 
@@ -188,3 +234,4 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	root.add_child(h)
 
 	return root
+# [BS:BUILD:MINIFIG:END]

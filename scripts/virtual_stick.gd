@@ -14,6 +14,15 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
 
+# ============================================================================
+# [BS:UI:TOUCH_STICK]
+# Purpose: Floating virtual stick - it appears wherever the thumb lands.
+# Invariants:
+# - Floating, not fixed. A fixed stick is the version that fails on a
+#   phone you are not looking down at.
+# - The origin follows the thumb past the edge so the stick never
+#   feels stuck.
+# ============================================================================
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed and _touch_id == -1:
@@ -26,6 +35,7 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 	elif event is InputEventScreenDrag and event.index == _touch_id:
 		_set_from(event.position)
+# [BS:UI:TOUCH_STICK:END]
 
 
 func _set_from(p: Vector2) -> void:

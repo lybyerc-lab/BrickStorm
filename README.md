@@ -96,6 +96,37 @@ Both land as workflow artifacts. The Android SDK is unreachable from the
 development container used to write this, so the APK is built in CI rather than
 locally — the web export is the fast playtest path.
 
+## Foundation
+
+The documents that keep this from drifting into a different game. Read in this
+order:
+
+| Document | What it is |
+|---|---|
+| [`Docs/NORTH_STAR.md`](Docs/NORTH_STAR.md) | The immovable target: the inversion, six pillars, the two laws, settled decisions, and what this game is **not**. Changes only by director approval. |
+| [`Docs/NO_DRIFT_POLICY.md`](Docs/NO_DRIFT_POLICY.md) | How it stays that way: the production summary, scope discipline, and an honest ranking of what each check can and cannot see. |
+| [`Docs/CODE_ANCHORS.md`](Docs/CODE_ANCHORS.md) | The 38 registered `[BS:...]` anchors, so high-risk logic is findable and its invariants live next to it. |
+| [`Docs/GAME_CONCEPT.md`](Docs/GAME_CONCEPT.md) | The full design: cast, campaign, collectibles, controls. |
+
+### Checks, ranked by what they actually prove
+
+```bash
+godot --headless --path . --import                              # compiles       (weak)
+godot --headless --path . --script res://tools/verify_anchors.gd # anchors agree (structural)
+godot --headless --path . -- --selftest                          # the loop RUNS  (load-bearing)
+godot --path . --rendering-driver opengl3 -- --capture           # what it LOOKS like (load-bearing)
+```
+
+The anchor verifier checks that every anchor in the code is registered and every
+registered anchor exists in the file the registry claims, with matched start/end
+markers. **It cannot tell you the code under an anchor still upholds the
+invariant written above it** — only the self-test, a screenshot, or a human can.
+That limit is stated in the tool's own header, and the verifier has been
+deliberately broken four ways to confirm it fails when it should.
+
+CI runs the anchor check and the self-test as gates before it will export
+anything.
+
 ## Source map
 
 | File | What it owns |
@@ -108,6 +139,7 @@ locally — the web export is the fast playtest path.
 | `scripts/stud_field.gd` | loose studs, magnet, collection value |
 | `scripts/hud.gd`, `virtual_stick.gd` | the two-thumb control scheme |
 | `scripts/main.gd` | world assembly, phases, camera, scoring |
+| `tools/verify_anchors.gd` | enforces the anchor registry against the source |
 
 ### Two things worth knowing before editing
 

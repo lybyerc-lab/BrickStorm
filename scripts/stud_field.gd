@@ -16,6 +16,17 @@ const PICKUP_DIST := 1.05
 var studs: Array = []
 
 
+# ============================================================================
+# [BS:ECONOMY:STUD_RECYCLING]
+# Purpose: Stud spawning under a hard cap.
+# Invariants:
+# - At the cap, retire the OLDEST stud rather than refusing the new
+#   one. Refusing starves the field: loot strands behind the storm and
+#   the player walks through an empty world. This has already been a
+#   bug once.
+# - Studs are deliberately not physics bodies - a few hundred
+#   RigidBody3D studs would eat a phone alive.
+# ============================================================================
 func spawn_burst(at: Vector3, count: int, colour: Color = BrickLib.C_YELLOW) -> void:
 	for i in range(count):
 		# At the cap, retire the OLDEST stud rather than refusing the new one.
@@ -32,8 +43,18 @@ func spawn_burst(at: Vector3, count: int, colour: Color = BrickLib.C_YELLOW) -> 
 			"settled": false,
 			"spin": randf_range(2.0, 4.5),
 		})
+# [BS:ECONOMY:STUD_RECYCLING:END]
 
 
+# ============================================================================
+# [BS:ECONOMY:STUD_VALUE]
+# Purpose: Magnet, pickup, and the value decision.
+# Invariants:
+# - Value is decided at the MOMENT OF COLLECTION from the PLAYER's
+#   current risk band - not from where the stud spawned. This is what
+#   makes standing close to the funnel the whole game.
+# - A tumbling player collects nothing; the toll must have a cost.
+# ============================================================================
 func _process(delta: float) -> void:
 	var player := get_tree().get_first_node_in_group("player") as Player
 	var tor := get_tree().get_first_node_in_group("tornado") as Tornado
@@ -76,6 +97,7 @@ func _process(delta: float) -> void:
 				n.queue_free()
 				studs.remove_at(i)
 		i -= 1
+# [BS:ECONOMY:STUD_VALUE:END]
 
 
 func _retire_oldest() -> void:

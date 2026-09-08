@@ -65,6 +65,14 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------- environment
+# ============================================================================
+# [BS:WORLD:ENVIRONMENT]
+# Purpose: Sky, sun and fog.
+# Invariants:
+# - The SKY carries the dread; the world below stays bright and
+#   saturated (North Star pillar 2). Do NOT darken the ground palette
+#   to signal danger - that contrast is the visual identity.
+# ============================================================================
 func _setup_environment() -> void:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
@@ -94,8 +102,16 @@ func _setup_environment() -> void:
 	sun.light_color = Color(1.0, 0.95, 0.82)
 	sun.shadow_enabled = true
 	add_child(sun)
+# [BS:WORLD:ENVIRONMENT:END]
 
 
+# ============================================================================
+# [BS:WORLD:GROUND]
+# Purpose: Ground plane and crop squares.
+# Invariants:
+# - Crop squares exist so the funnel's track across the fields reads
+#   from the air, and so no large dead empty zone fills the frame.
+# ============================================================================
 func _build_ground() -> void:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
@@ -131,6 +147,7 @@ func _build_ground() -> void:
 
 # --------------------------------------------------------------------- world
 # Small convenience: a positioned visual brick.
+# [BS:WORLD:GROUND:END]
 func _vbrick(sw: int, sd: int, h: float, colour: Color, pos: Vector3) -> Node3D:
 	var b := BrickLib.brick_visual(sw, sd, h, colour)
 	b.position = pos
@@ -142,6 +159,15 @@ func _add_structure(st: Structure) -> void:
 	structures.append(st)
 
 
+# ============================================================================
+# [BS:WORLD:LAYOUT]
+# Purpose: Where the town stands.
+# Invariants:
+# - Structures are placed so the funnel's path crosses several of
+#   them - an empty run is a boring run.
+# - At least one structure should remain intact in frame for scale
+#   contrast (screenshot checklist).
+# ============================================================================
 func _build_town() -> void:
 	_add_structure(PropBuilder.farmhouse(Vector3(-20, 0, -12)))
 	_add_structure(PropBuilder.barn(Vector3(16, 0, -18)))
@@ -170,6 +196,16 @@ func _build_town() -> void:
 
 
 # Design Law #1: cows fly, cows land, cows are never destroyed.
+# [BS:WORLD:LAYOUT:END]
+# ============================================================================
+# [BS:WORLD:CRITTERS]
+# Purpose: Cows - protected actors, and the proof of North Star Law 1.
+# Invariants:
+# - Cows are on collision layer 8. Debris (layer 4) cannot touch them.
+# - They are dragged by the funnel exactly like debris, and are NEVER
+#   converted to studs, damaged, or removed. They fly, they land, they
+#   are fine. See BS:LAW:NO_HARM.
+# ============================================================================
 func _build_cows() -> void:
 	critter_root = Node3D.new()
 	critter_root.name = "Critters"
@@ -210,6 +246,7 @@ func _build_cows() -> void:
 
 
 # -------------------------------------------------------------------- actors
+# [BS:WORLD:CRITTERS:END]
 func _spawn_actors() -> void:
 	debris_root = Node3D.new()
 	debris_root.name = "Debris"
@@ -246,6 +283,15 @@ func _spawn_actors() -> void:
 	camera.global_position = Vector3(-4, 22, 28)
 
 
+# ============================================================================
+# [BS:OBJECTIVE:DOROTHY]
+# Purpose: The build spot and the DOROTHY pod - the objective props.
+# Invariants:
+# - Deploying Dorothy is the recurring objective verb of the whole
+#   campaign, not a one-off for this level.
+# - The build spot must sit where the funnel's path will reach it, or
+#   the deployment can never complete.
+# ============================================================================
 func _spawn_objective_props() -> void:
 	# the build spot: a heap of loose bricks waiting to become an anchor
 	build_spot = Node3D.new()
@@ -293,6 +339,8 @@ func _spawn_objective_props() -> void:
 		ball.position = Vector3(randf_range(-0.4, 0.4), 1.3, randf_range(-0.4, 0.4))
 		dorothy.add_child(ball)
 
+
+# [BS:OBJECTIVE:DOROTHY:END]
 
 func _wire_hud() -> void:
 	hud = HUD.new()
@@ -346,6 +394,16 @@ func _read_input() -> void:
 	player.move_input = v
 
 
+# ============================================================================
+# [BS:CAMERA:DIRECTOR]
+# Purpose: Auto-framing. The camera is a director, not a player control.
+# Invariants:
+# - There is no camera control and never will be (pillar 6).
+# - The lead toward the funnel is CAPPED. Uncapped, the camera frames
+#   a midpoint and loses the player off-screen entirely. This has
+#   already been a bug once.
+# - The player is always in frame. That is the one hard requirement.
+# ============================================================================
 func _update_camera(delta: float) -> void:
 	var p := player.global_position
 	var t := tornado.funnel_pos()
@@ -363,6 +421,7 @@ func _update_camera(delta: float) -> void:
 
 
 # ------------------------------------------------------------------ contexts
+# [BS:CAMERA:DIRECTOR:END]
 func _nearest_structure(within: float) -> Structure:
 	var best: Structure = null
 	var bd := within
@@ -376,6 +435,15 @@ func _nearest_structure(within: float) -> Structure:
 	return best
 
 
+# ============================================================================
+# [BS:OBJECTIVE:CONTEXT_ACTION]
+# Purpose: What the single context button means at this moment.
+# Invariants:
+# - Exactly one action is offered at a time, and the button label
+#   always states it. Ambiguity here is a control bug.
+# - Resolution order is priority order: the most specific applicable
+#   action wins, and BRACE is the fallback.
+# ============================================================================
 func _update_context() -> void:
 	var p := player.global_position
 	var act := "BRACE"
@@ -393,6 +461,7 @@ func _update_context() -> void:
 
 	context_action = act
 	hud.set_context(act)
+# [BS:OBJECTIVE:CONTEXT_ACTION:END]
 
 
 func _on_context_pressed() -> void:
@@ -447,6 +516,15 @@ func _do_deploy() -> void:
 
 
 # -------------------------------------------------------------------- phases
+# ============================================================================
+# [BS:OBJECTIVE:PHASES]
+# Purpose: LOOT -> BUILD -> CARRY -> DEPLOY -> WON.
+# Invariants:
+# - Phases only advance. There is no failure transition - see
+#   BS:LAW:NO_FAIL.
+# - Each phase change restates the objective on the HUD; the player
+#   must never have to guess what to do next.
+# ============================================================================
 func _update_phase(delta: float) -> void:
 	match phase:
 		Phase.LOOT:
@@ -465,6 +543,7 @@ func _update_phase(delta: float) -> void:
 					_win()
 		_:
 			pass
+# [BS:OBJECTIVE:PHASES:END]
 
 
 func _assemble_anchor() -> void:
@@ -516,6 +595,15 @@ func _tear_with_funnel() -> void:
 
 
 # A loose brick lives briefly, then bursts into the studs it is worth.
+# ============================================================================
+# [BS:DESTRUCTION:DEBRIS_LIFECYCLE]
+# Purpose: A loose brick lives briefly, then bursts into the studs it is worth.
+# Invariants:
+# - This is the link between destruction and the economy: torn
+#   scenery MUST become collectable value, or the loop breaks.
+# - Loose bodies are capped. Oldest-first retirement keeps the
+#   simulation affordable on a phone.
+# ============================================================================
 func _age_debris(delta: float) -> void:
 	var i := debris.size() - 1
 	while i >= 0:
@@ -534,6 +622,7 @@ func _age_debris(delta: float) -> void:
 			b.queue_free()
 			debris.remove_at(i)
 		i -= 1
+# [BS:DESTRUCTION:DEBRIS_LIFECYCLE:END]
 
 
 func _check_lift() -> void:
@@ -562,6 +651,15 @@ func _on_player_tumbled(at: Vector3) -> void:
 
 # ---------------------------------------------------------------------- demo
 # Autopilot used for verification captures: walk the risk bands, loot, brace.
+# ============================================================================
+# [BS:QA:AUTOPILOT]
+# Purpose: The demo driver used for capture runs.
+# Invariants:
+# - Not gameplay. It exists to make captures reproducible and must
+#   never be reachable in a shipping build.
+# - It only chases loot still near the funnel - stale studs behind the
+#   storm are a trap that pulls the capture out of the bands.
+# ============================================================================
 func _demo_input() -> Vector2:
 	var p := player.global_position
 	var band := tornado.band_of(p)
@@ -595,6 +693,16 @@ func _demo_input() -> Vector2:
 
 # Drives the funnel straight onto the barn and steps real physics frames, so the
 # check covers the actual hook: tear -> debris -> studs -> score.
+# [BS:QA:AUTOPILOT:END]
+# ============================================================================
+# [BS:QA:CAPTURE]
+# Purpose: Screenshot capture at fixed simulated times.
+# Invariants:
+# - Captures happen after frame_post_draw, so a shot is what was
+#   actually drawn.
+# - Screenshots are load-bearing evidence (Docs/NO_DRIFT_POLICY.md).
+#   Nothing in Docs/shots is concept art.
+# ============================================================================
 func _tick_capture() -> void:
 	if _capture_i >= _capture_at.size():
 		return
@@ -619,6 +727,20 @@ func _grab(name: String) -> void:
 		get_tree().quit()
 
 
+# [BS:QA:CAPTURE:END]
+
+# ============================================================================
+# [BS:QA:SELFTEST]
+# Purpose: The load-bearing behavioural gate. CI runs this before it exports anything.
+# Invariants:
+# - It must be able to FAIL. It drives the funnel onto the barn, steps
+#   real physics frames, and asserts bricks were actually torn AND that
+#   destruction actually produced studs and score.
+# - It exits non-zero on failure. Never weaken an assertion to make a
+#   build pass - a check that cannot fail is worse than no check.
+# - It steps physics frames, not process frames: headless process
+#   frames run uncapped and simulate almost no time.
+# ============================================================================
 func _run_selftest() -> void:
 	await get_tree().process_frame
 	tornado.global_position = Vector3(16, 0, -18)
@@ -638,6 +760,7 @@ func _run_selftest() -> void:
 		ok = false
 	print("SELFTEST OK" if ok else "SELFTEST FAILED")
 	get_tree().quit(0 if ok else 1)
+# [BS:QA:SELFTEST:END]
 
 
 func _total_torn() -> int:

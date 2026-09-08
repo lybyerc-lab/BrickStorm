@@ -14,6 +14,16 @@ var _bmin := Vector3(1e9, 1e9, 1e9)
 var _bmax := Vector3(-1e9, -1e9, -1e9)
 
 
+# ============================================================================
+# [BS:DESTRUCTION:STRUCTURE]
+# Purpose: A brick-built structure: cheap visuals until torn, rigid bodies after.
+# Invariants:
+# - Untorn bricks are NOT physics bodies. Hundreds of frozen
+#   RigidBody3D would eat a phone alive.
+# - One static collider covers the whole structure, and is disabled
+#   once it is mostly rubble - walking through a pile of loose bricks
+#   is the correct behaviour.
+# ============================================================================
 func add_brick(sw: int, sd: int, h: float, color: Color, pos: Vector3, rot: Vector3 = Vector3.ZERO, studs: bool = true) -> void:
 	var v := BrickLib.brick_visual(sw, sd, h, color, studs)
 	v.position = pos
@@ -28,6 +38,7 @@ func add_brick(sw: int, sd: int, h: float, color: Color, pos: Vector3, rot: Vect
 
 # One box collider for the whole structure. Removed once it is mostly rubble,
 # because walking through a pile of loose bricks is the correct behaviour.
+# [BS:DESTRUCTION:STRUCTURE:END]
 func finish() -> void:
 	if entries.is_empty():
 		return
@@ -50,6 +61,15 @@ func is_rubble() -> bool:
 
 
 # Tear every brick within `radius` of a world point. Returns the new debris bodies.
+# ============================================================================
+# [BS:DESTRUCTION:TEAR]
+# Purpose: Promotion of a visual brick to a simulated one at the moment it is torn.
+# Invariants:
+# - The tear budget is per-frame and capped by the caller: an
+#   unbounded tear spikes the frame on a phone.
+# - Debris bodies inherit the visual brick's exact world transform,
+#   so a structure never visibly jumps as it comes apart.
+# ============================================================================
 func tear(world_center: Vector3, radius: float, debris_parent: Node3D, max_count: int) -> Array:
 	var out: Array = []
 	if torn_count >= entries.size():
@@ -80,3 +100,4 @@ func tear(world_center: Vector3, radius: float, debris_parent: Node3D, max_count
 	if collider != null and is_rubble():
 		collider.disabled = true
 	return out
+# [BS:DESTRUCTION:TEAR:END]

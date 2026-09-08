@@ -45,6 +45,14 @@ func _mk_label(text: String, size_px: int, colour: Color) -> Label:
 	return l
 
 
+# ============================================================================
+# [BS:UI:HUD]
+# Purpose: HUD readouts and layout.
+# Invariants:
+# - The HUD supports the scene rather than covering it (North Star
+#   screenshot checklist).
+# - Landscape only. Layout assumes a wider-than-tall viewport.
+# ============================================================================
 func _build_readouts() -> void:
 	mult_label = _mk_label("x1", 78, BAND_COLOURS[0])
 	mult_label.position = Vector2(28, 10)
@@ -67,6 +75,7 @@ func _build_readouts() -> void:
 	toast_label.position = Vector2(0, 150)
 	toast_label.modulate.a = 0.0
 	add_child(toast_label)
+# [BS:UI:HUD:END]
 
 
 func _build_stick() -> void:
@@ -77,6 +86,15 @@ func _build_stick() -> void:
 	add_child(stick)
 
 
+# ============================================================================
+# [BS:UI:CONTEXT_BUTTON]
+# Purpose: The single context button whose meaning changes by proximity.
+# Invariants:
+# - ONE button. Its label always states what it will do right now:
+#   SMASH / BUILD / GRAB / BRACE / DEPLOY.
+# - Everything must be reachable by a right thumb in landscape
+#   (pillar 6). Do not add a second action button.
+# ============================================================================
 func _build_context_button() -> void:
 	ctx_panel = Panel.new()
 	ctx_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -97,8 +115,15 @@ func _build_context_button() -> void:
 	ctx_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ctx_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	ctx_panel.add_child(ctx_label)
+# [BS:UI:CONTEXT_BUTTON:END]
 
 
+# ============================================================================
+# [BS:UI:SWAP]
+# Purpose: Character portraits - swap is one tap, never a menu.
+# Invariants:
+# - The active character is always visually obvious.
+# ============================================================================
 func _build_portraits() -> void:
 	var names := ["JO", "BILL"]
 	var cols := [BrickLib.C_BLUE, BrickLib.C_LGREY]
@@ -126,6 +151,7 @@ func _build_portraits() -> void:
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		p.add_child(l)
 		portraits.append(p)
+# [BS:UI:SWAP:END]
 
 
 func _on_ctx_input(event: InputEvent) -> void:
@@ -143,6 +169,17 @@ func set_active_character(c: int) -> void:
 		portraits[i].modulate = Color(1, 1, 1, 1.0) if i == c else Color(0.55, 0.55, 0.6, 0.8)
 
 
+# ============================================================================
+# [BS:UI:MULTIPLIER]
+# Purpose: The multiplier: the dominant HUD element and the movie's thesis.
+# Invariants:
+# - It must remain the largest, most legible thing on screen
+#   (pillar 5). Do not demote it to make room for anything.
+# - Scale, never font-size, on change: resizing the font reflows the
+#   label and walks it over the stud counter. This has already been a
+#   bug once.
+# - Colour comes from the band, matching the rings on the ground.
+# ============================================================================
 func set_band(band: int, multiplier: int) -> void:
 	mult_label.text = "x%d" % multiplier
 	mult_label.add_theme_color_override("font_color", BAND_COLOURS[clampi(band, 0, 3)])
@@ -150,6 +187,7 @@ func set_band(band: int, multiplier: int) -> void:
 	# it over the stud counter
 	var k: float = 1.0 + float(band) * 0.09
 	mult_label.scale = mult_label.scale.lerp(Vector2(k, k), 0.25)
+# [BS:UI:MULTIPLIER:END]
 
 
 func set_studs(n: int) -> void:
