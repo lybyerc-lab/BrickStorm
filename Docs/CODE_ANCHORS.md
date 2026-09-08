@@ -89,6 +89,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:PLAYER:SMASH]` — `scripts/main.gd` — player-driven destruction; ungated, always available
 - `[BS:PLAYER:JUMP]` — `scripts/player.gd` — the jump
 - `[BS:PLAYER:CHARACTERS]` — `scripts/player.gd` — ability gates per character
+- `[BS:PLAYER:WALK_CYCLE]` — `scripts/player.gd` — the stiff-legged minifig waddle
 - `[BS:PLAYER:MOVEMENT]` — `scripts/player.gd` — movement under wind
 - `[BS:PLAYER:BRACE]` — `scripts/player.gd` — brace and lift immunity
 - `[BS:PLAYER:TUMBLE]` — `scripts/player.gd` — the carried-and-dropped state
@@ -110,6 +111,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 ### Audio
 
 - `[BS:AUDIO:BANK]` — `scripts/audio.gd` — the event vocabulary; events name what happened, not the file
+- `[BS:AUDIO:MIX]` — `scripts/audio.gd` — bus layout and the master limiter
 - `[BS:AUDIO:MIXER]` — `scripts/audio.gd` — stream cache and the fixed 3D voice pool
 - `[BS:AUDIO:STUD_LADDER]` — `scripts/audio.gd` — rising pitch through a stud streak
 - `[BS:AUDIO:STORM_ROAR]` — `scripts/main.gd` — the funnel's roar as the primary risk signal

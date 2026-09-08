@@ -174,7 +174,7 @@ func _update_engine(speed: float) -> void:
 		if _engine == null:
 			return
 	var k: float = clampf(speed / max_speed, 0.0, 1.0)
-	_engine.volume_db = lerpf(-46.0, -12.0, k)
+	_engine.volume_db = lerpf(-50.0, -20.0, k)
 	_engine.pitch_scale = 0.62 + k * 0.85
 # [BS:AUDIO:ENGINE:END]
 

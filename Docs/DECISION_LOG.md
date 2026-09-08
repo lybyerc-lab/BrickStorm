@@ -7,6 +7,87 @@ future reader can tell a deliberate reversal from drift.
 
 ---
 
+## 2026-09-08 — Device feedback: movement, mix, and LEGO identity
+
+**Decided by:** director, from hands-on play of the run #4 APK
+**Supersedes:** nothing. Three defects and one identity gap.
+
+### "The movement is terrible"
+
+A real bug, introduced by me two commits earlier. When the camera was changed to
+orbit the player, movement kept using raw WORLD axes. Pushing the stick "up"
+sent the character along world -Z regardless of where the camera was pointing,
+so the control direction and the screen direction drifted apart as the camera
+swung. Disorienting, exactly as reported.
+
+Input is now rotated into the camera's frame: the stick is a screen direction,
+so up-screen is always away from the camera. Autopilot and self-test inputs are
+world-space by design and deliberately bypass the transform.
+
+The self-test now gates it — it asserts that stick-up moves away from the camera
+and that the resulting world direction reverses when the camera orbits to the
+opposite side. Verified to fail when the transform is removed.
+
+To be explicit about the director's other note: the character moves in whatever
+direction the stick points. There is no forward-plus-turn scheme for the
+character, and there never was; the bug was the frame of reference, not the
+control model.
+
+### "The sound effects aren't leveled very well"
+
+Levels were set per call site with no structure behind them. Now there is a bus
+layout — impacts on SFX, the storm bed on Storm — because those two are balanced
+against each other constantly and one flat level cannot serve both a continuous
+bed and transient peaks. A hard limiter sits on Master: this game stacks sound
+violently, a barn can fire a dozen impacts in one frame, and that sums into
+clipping, which is most of what "badly levelled" sounds like.
+
+Every level was rebalanced downward, and the stud pitch ladder was shortened
+from 22 steps to 14 and its step reduced, because it was reaching roughly double
+pitch by the top of a streak and turning shrill.
+
+### "This still doesn't identify as a classic LEGO game"
+
+The most useful note of the three, and the least finished.
+
+Fixed this round:
+
+- **The minifig now walks.** Legs and arms swing in opposition from hip and
+  shoulder pivots, with a bob. A sliding block reads as a physics prop, not a
+  character, and no amount of shading fixes that. `[BS:PLAYER:WALK_CYCLE]`
+- **The arms were buried inside the torso.** Shoulders sat at ±0.30 on a body
+  1.0 wide, so the limbs were hidden and the silhouette was a stack of boxes.
+- **It has a face** — the classic two dots and a smile.
+- **The hair was a box floating above the skull**, the single most obvious tell
+  that a model is not a minifig. It now caps the head.
+- **The camera came in closer and lower**, so the minifig is the subject rather
+  than a speck on a battlefield.
+
+And one self-inflicted regression caught by looking at a capture: making the
+brick material glossy applied to the 420m ground plane too, turning the whole
+floor into a mirror with a specular sun the size of a building in frame.
+Terrain now has its own matte material. The world had also drifted grey and
+washed out, against pillar 2 which says the world stays bright and only the sky
+darkens; light, fog and palette were corrected.
+
+**Still not there, and honestly not close:** the environment is a sparse open
+field where a LEGO game would be a dense built set, the camera is still further
+out than the genre's, there are no idle animations, no cutscenes, no stud
+shower on destruction, and the world does not reward close inspection. Those are
+the next block of work, not a polish pass.
+
+### Verification
+
+New capture modes were added because none of the above could be judged from a
+gameplay screenshot: a posed three-quarter closeup and a head-on face shot, both
+with the HUD hidden, the player frozen and the camera locked. Three separate
+framing bugs were found and fixed using them before the rig could be assessed at
+all — which is the point.
+
+Import clean, ANCHORS OK 54/54, SELFTEST OK, captures inspected.
+
+---
+
 ## 2026-09-08 — Audio from CC0 sources, and TT Games research applied
 
 **Decided by:** director ("work on the audio also, but let's not invent what we

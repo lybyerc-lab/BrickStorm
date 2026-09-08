@@ -52,13 +52,54 @@ var _stud_sounded: float = 0.0
 
 
 func _ready() -> void:
+	_setup_buses()
 	for i in range(POOL_SIZE):
 		var p := AudioStreamPlayer3D.new()
 		p.max_distance = 90.0
 		p.unit_size = 14.0
 		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		p.bus = "SFX"
 		add_child(p)
 		_pool.append(p)
+
+
+# ============================================================================
+# [BS:AUDIO:MIX]
+# Purpose: Bus layout and the master limiter.
+# Invariants:
+# - Impacts and the storm live on SEPARATE buses. They are balanced against
+#   each other constantly and a single flat level cannot serve both: the roar
+#   is a continuous bed, impacts are transient peaks.
+# - A hard limiter sits on Master because this game stacks sound violently -
+#   a barn coming apart can fire a dozen impacts in one frame, and without a
+#   limiter that sums into clipping, which is most of what "badly levelled"
+#   sounds like.
+# - Levels are set in ONE place, here and in the wrappers below. No caller
+#   passes a raw decibel value.
+# ============================================================================
+func _bus(name: String, volume_db: float) -> void:
+	if AudioServer.get_bus_index(name) != -1:
+		return
+	AudioServer.add_bus()
+	var i := AudioServer.bus_count - 1
+	AudioServer.set_bus_name(i, name)
+	AudioServer.set_bus_send(i, "Master")
+	AudioServer.set_bus_volume_db(i, volume_db)
+
+
+func _setup_buses() -> void:
+	_bus("SFX", -3.0)
+	_bus("Storm", -6.0)
+	var m := AudioServer.get_bus_index("Master")
+	if m != -1 and AudioServer.get_bus_effect_count(m) == 0:
+		var fx: AudioEffect = null
+		if ClassDB.class_exists("AudioEffectHardLimiter"):
+			fx = ClassDB.instantiate("AudioEffectHardLimiter")
+		else:
+			fx = AudioEffectLimiter.new()
+		if fx != null:
+			AudioServer.add_bus_effect(m, fx)
+# [BS:AUDIO:MIX:END]
 
 
 # ============================================================================
@@ -130,6 +171,7 @@ func attach_loop(name: String, to: Node3D, volume_db: float = -80.0) -> AudioStr
 	p.unit_size = 40.0
 	p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 	p.volume_db = volume_db
+	p.bus = "Storm"
 	to.add_child(p)
 	p.play()
 	return p
@@ -155,35 +197,35 @@ func stud(at: Vector3) -> void:
 	if now - _stud_sounded < 0.045:
 		return
 	_stud_sounded = now
-	_stud_streak = mini(_stud_streak + 1, 22)
-	play("stud", at, -9.0, 1.0 + float(_stud_streak) * 0.045)
+	_stud_streak = mini(_stud_streak + 1, 14)
+	play("stud", at, -13.0, 1.0 + float(_stud_streak) * 0.034)
 # [BS:AUDIO:STUD_LADDER:END]
 
 
 # Convenience wrappers so callers name the event, not the file.
 func smash(at: Vector3, heavy: bool = false) -> void:
-	play("smash_heavy" if heavy else "smash", at, -3.0, randf_range(0.92, 1.10))
+	play("smash_heavy" if heavy else "smash", at, -6.0 if heavy else -9.0, randf_range(0.92, 1.10))
 
 
 func ram(at: Vector3, force: float) -> void:
-	play("ram", at, clampf(-10.0 + force * 0.4, -10.0, 2.0), randf_range(0.85, 1.0))
+	play("ram", at, clampf(-16.0 + force * 0.4, -16.0, -5.0), randf_range(0.85, 1.0))
 
 
 func tumble(at: Vector3) -> void:
-	play("tumble", at, -2.0, randf_range(0.9, 1.05))
+	play("tumble", at, -8.0, randf_range(0.9, 1.05))
 
 
 func jump(at: Vector3) -> void:
-	play("jump", at, -14.0, randf_range(1.0, 1.12))
+	play("jump", at, -17.0, randf_range(1.0, 1.12))
 
 
 func built(at: Vector3) -> void:
-	play("build", at, -4.0)
+	play("build", at, -9.0)
 
 
 func objective(at: Vector3) -> void:
-	play("objective", at, -5.0)
+	play("objective", at, -9.0)
 
 
 func deployed(at: Vector3) -> void:
-	play("deploy", at, -3.0)
+	play("deploy", at, -8.0)

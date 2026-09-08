@@ -23,6 +23,8 @@ var tumble_timer: float = 0.0
 var ability_timer: float = 0.0
 var driving: Node = null
 var invuln_timer: float = 0.0
+var _walk_phase: float = 0.0
+var _parts: Dictionary = {}
 
 var _rigs: Dictionary = {}
 var _visual_root: Node3D = null
@@ -49,7 +51,12 @@ func _ready() -> void:
 	_rigs[Character.JO] = BrickLib.minifig(BrickLib.C_BLUE, BrickLib.C_DGREY, BrickLib.C_BROWN)
 	_rigs[Character.BILL] = BrickLib.minifig(BrickLib.C_LGREY, BrickLib.C_BROWN, BrickLib.C_BLACK)
 	for k in _rigs:
-		_visual_root.add_child(_rigs[k])
+		var r: Node3D = _rigs[k]
+		_visual_root.add_child(r)
+		_parts[k] = {
+			"hl": r.get_node_or_null("HipL"), "hr": r.get_node_or_null("HipR"),
+			"sl": r.get_node_or_null("ShoulderL"), "sr": r.get_node_or_null("ShoulderR"),
+		}
 	_apply_character()
 
 
@@ -229,7 +236,7 @@ func _physics_process(delta: float) -> void:
 	if flat.length() > 0.4:
 		_facing = lerp_angle(_facing, atan2(velocity.x, velocity.z), 0.24)
 	_visual_root.rotation = Vector3(0, _facing, 0)
-	_visual_root.position = Vector3.ZERO
+	_animate_walk(delta, flat.length())
 
 	# a braced minifig leans into it
 	if braced and t != null:
@@ -268,6 +275,42 @@ func _tumbling(delta: float) -> void:
 		_visual_root.position.y = 0.0
 		invuln_timer = INVULN_TIME
 # [BS:PLAYER:TUMBLE:END]
+
+
+# ============================================================================
+# [BS:PLAYER:WALK_CYCLE]
+# Purpose: The stiff-legged minifig waddle.
+# Invariants:
+# - Legs and arms swing in opposition from hip and shoulder pivots, with a
+#   small vertical bob. This is THE signature silhouette of the genre - a
+#   minifig that slides across the ground reads as a physics prop, not a
+#   character, and no amount of shading fixes that.
+# - Amplitude scales with actual speed, so a shove from the wind animates too.
+# - The pose always returns to neutral when stopped; it must never leave the
+#   rig frozen mid-stride.
+# ============================================================================
+func _animate_walk(delta: float, spd: float) -> void:
+	var p: Dictionary = _parts.get(character, {})
+	if p.is_empty():
+		return
+	var amp: float = clampf(spd / maxf(speed(), 0.01), 0.0, 1.0)
+	if spd > 0.6:
+		_walk_phase += delta * (7.0 + spd * 0.8)
+	else:
+		amp = 0.0
+		_walk_phase = 0.0
+	var sw: float = sin(_walk_phase) * amp * 0.66
+
+	if p["hl"] != null:
+		p["hl"].rotation.x = sw
+	if p["hr"] != null:
+		p["hr"].rotation.x = -sw
+	if p["sl"] != null:
+		p["sl"].rotation.x = -sw * 0.8
+	if p["sr"] != null:
+		p["sr"].rotation.x = sw * 0.8
+	_visual_root.position.y = absf(sin(_walk_phase)) * amp * 0.085
+# [BS:PLAYER:WALK_CYCLE:END]
 
 
 func launch(dir: Vector3, force: float) -> void:

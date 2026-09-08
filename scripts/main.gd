@@ -12,7 +12,7 @@ const MAX_LOOSE := 110
 const TEAR_BUDGET := 5
 const BRICK_LIFETIME := 6.0
 const BUILD_TIME := 2.4
-const FUNNEL_CLEARANCE := 20.0
+const FUNNEL_CLEARANCE := 15.0
 
 enum Phase { LOOT, BUILD, CARRY, DEPLOY, WON }
 
@@ -55,6 +55,8 @@ var capture_mode: bool = false
 var _capture_at: Array = [5.0, 11.0, 17.0, 23.0, 29.0]
 var _capture_i: int = 0
 var _capture_dir: String = "/home/user/brickstorm_shots"
+var _closeup: bool = false
+var _camera_locked: bool = false
 var _demo_target := Vector3.ZERO
 var _elapsed: float = 0.0
 
@@ -94,25 +96,25 @@ func _setup_environment() -> void:
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
 	# The sky carries the dread; the world below stays bright (§9).
-	sm.sky_top_color = Color(0.11, 0.15, 0.14)
-	sm.sky_horizon_color = Color(0.60, 0.58, 0.32)
-	sm.ground_bottom_color = Color(0.18, 0.20, 0.16)
-	sm.ground_horizon_color = Color(0.50, 0.49, 0.33)
+	sm.sky_top_color = Color(0.13, 0.17, 0.16)
+	sm.sky_horizon_color = Color(0.72, 0.66, 0.36)
+	sm.ground_bottom_color = Color(0.30, 0.34, 0.24)
+	sm.ground_horizon_color = Color(0.62, 0.58, 0.38)
 	sm.sun_angle_max = 40.0
 	sky.sky_material = sm
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 1.15
+	env.ambient_light_energy = 1.5
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.55, 0.55, 0.40)
-	env.fog_density = 0.0022
+	env.fog_light_color = Color(0.66, 0.65, 0.46)
+	env.fog_density = 0.0009
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-46, 38, 0)
-	sun.light_energy = 1.15
-	sun.light_color = Color(1.0, 0.95, 0.82)
+	sun.light_energy = 1.45
+	sun.light_color = Color(1.0, 0.96, 0.88)
 	sun.shadow_enabled = true
 	add_child(sun)
 # [BS:WORLD:ENVIRONMENT:END]
@@ -139,7 +141,7 @@ func _build_ground() -> void:
 	pm.size = Vector2(420, 420)
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
-	mi.material_override = BrickLib.mat(Color(0.36, 0.50, 0.24))
+	mi.material_override = BrickLib.terrain_mat(Color(0.42, 0.58, 0.26))
 	add_child(mi)
 
 	# crop squares, so the funnel's track across the fields reads from the air
@@ -153,7 +155,7 @@ func _build_ground() -> void:
 		var base := Color(0.44 + tone, 0.46 + tone, 0.20 + tone * 0.5)
 		if i % 3 == 0:
 			base = Color(0.62 + tone, 0.55 + tone, 0.28)
-		m.material_override = BrickLib.mat(base)
+		m.material_override = BrickLib.terrain_mat(base)
 		m.position = Vector3(randf_range(-150, 150), 0.02 + float(i) * 0.002, randf_range(-150, 150))
 		add_child(m)
 
@@ -438,6 +440,18 @@ func _read_input() -> void:
 	if kb.length() > 0.01:
 		v = kb.normalized()
 
+	# The stick is a SCREEN direction, so it must be rotated into the camera's
+	# frame. The camera orbits the player, so feeding raw world axes straight
+	# in sends you somewhere unrelated to where your thumb pushed - which is
+	# exactly what it felt like. Autopilot and self-test inputs are already
+	# world-space and deliberately bypass this.
+	if v.length() > 0.01:
+		var b := camera.global_transform.basis
+		var fwd := Vector3(-b.z.x, 0.0, -b.z.z).normalized()
+		var right := Vector3(b.x.x, 0.0, b.x.z).normalized()
+		var w := right * v.x - fwd * v.y
+		v = Vector2(w.x, w.z)
+
 	if demo_mode:
 		v = _demo_input()
 	if _force_input:
@@ -470,6 +484,8 @@ func _read_input() -> void:
 #   inside of the tornado. This has already been a bug once.
 # ============================================================================
 func _update_camera(delta: float) -> void:
+	if _camera_locked:
+		return                      # verification closeups own the camera
 	var p := player.global_position
 	var t := tornado.funnel_pos()
 
@@ -483,8 +499,10 @@ func _update_camera(delta: float) -> void:
 	_cam_dir = _cam_dir.lerp(want, clampf(delta * 0.9, 0.0, 1.0)).normalized()
 
 	var d: float = clampf(p.distance_to(t), 14.0, 60.0)
-	var back: float = 15.0 + d * 0.22
-	var height: float = 10.0 + d * 0.18
+	# Close and low. A LEGO game frames the MINIFIG; a distant top-down camera
+	# turns the star of the show into a speck and reads as a strategy game.
+	var back: float = 9.5 + d * 0.12
+	var height: float = 5.4 + d * 0.10
 	var desired := p + _cam_dir * back + Vector3(0, height, 0)
 
 	# Backstop: never inside the cone, which flares near the top.
@@ -499,9 +517,9 @@ func _update_camera(delta: float) -> void:
 	# Look slightly past the player toward the storm.
 	var lead := t - p
 	lead.y = 0.0
-	if lead.length() > 22.0:
-		lead = lead.normalized() * 22.0
-	camera.look_at(p + lead * 0.32 + Vector3(0, 2.2, 0), Vector3.UP)
+	if lead.length() > 16.0:
+		lead = lead.normalized() * 16.0
+	camera.look_at(p + lead * 0.22 + Vector3(0, 1.5, 0), Vector3.UP)
 
 
 # ------------------------------------------------------------------ contexts
@@ -865,7 +883,7 @@ func _update_storm_audio() -> void:
 	var d := tornado.funnel_pos().distance_to(player.global_position)
 	var near: float = clampf(1.0 - d / 78.0, 0.0, 1.0)
 	near = near * near
-	_roar.volume_db = lerpf(-42.0, -6.0, near)
+	_roar.volume_db = lerpf(-44.0, -13.0, near)
 	_roar.pitch_scale = 0.70 + near * 0.26
 # [BS:AUDIO:STORM_ROAR:END]
 
@@ -986,6 +1004,8 @@ func _tick_capture() -> void:
 		return
 	var idx := _capture_i
 	_capture_i += 1
+	if idx == _capture_at.size() - 1:
+		_closeup = true
 	_grab("shot_%d" % (idx + 1))
 
 
@@ -999,6 +1019,48 @@ func _grab(name: String) -> void:
 		name, _elapsed, score, phase, _total_torn(), debris.size(),
 		studfield.studs.size(), tornado.band_of(pp),
 		pp.distance_to(tornado.funnel_pos())])
+	if _closeup and name.begins_with("shot"):
+		# Frame the minifig tight: the rig, the face and the walk cycle cannot
+		# be judged from a gameplay camera and they are the whole identity.
+		var focus := player.global_position
+		hud.visible = false
+		_camera_locked = true
+		# Freeze the player first: _physics_process re-aims the rig along its
+		# movement every frame and would overwrite the pose set below.
+		player.set_physics_process(false)
+		player.velocity = Vector3.ZERO
+		var eye := focus + Vector3(1.9, 1.05, 2.8)
+		camera.global_position = eye
+		camera.look_at(focus + Vector3(0, 0.90, 0), Vector3.UP)
+		# Turn the minifig to the lens and hold a mid-stride pose: a closeup of
+		# the back of the head verifies nothing.
+		var to_cam := eye - focus
+		player._visual_root.rotation = Vector3(0, atan2(to_cam.x, to_cam.z), 0)
+		player._animate_walk(0.0, player.speed() * 0.8)
+		player._walk_phase = 1.2
+		player._animate_walk(0.0, player.speed() * 0.8)
+		await get_tree().process_frame
+		# Re-assert after the tick: a physics frame can still interleave and
+		# re-aim the rig along its last movement direction.
+		player._visual_root.rotation = Vector3(0, atan2(to_cam.x, to_cam.z), 0)
+		player._walk_phase = 1.2
+		player._animate_walk(0.0, player.speed() * 0.8)
+		await RenderingServer.frame_post_draw
+		var img2 := get_viewport().get_texture().get_image()
+		img2.save_png("%s/minifig.png" % _capture_dir)
+
+		# Head-on at head height: the only way to confirm the face renders.
+		camera.global_position = focus + Vector3(0, 1.52, 1.15)
+		camera.look_at(focus + Vector3(0, 1.50, 0), Vector3.UP)
+		player._visual_root.rotation = Vector3.ZERO
+		await get_tree().process_frame
+		player._visual_root.rotation = Vector3.ZERO
+		await RenderingServer.frame_post_draw
+		var img3 := get_viewport().get_texture().get_image()
+		img3.save_png("%s/minifig_face.png" % _capture_dir)
+		print("CAPTURED minifig closeup + face")
+		get_tree().quit()
+		return
 	if _capture_i >= _capture_at.size():
 		get_tree().quit()
 
@@ -1075,6 +1137,38 @@ func _run_selftest() -> void:
 		await get_tree().physics_frame
 	if player.global_position.y <= y0 + 0.3:
 		fails.append("JUMP did not leave the ground")
+
+	# --- 3b. movement must be CAMERA-relative -----------------------------
+	# The bug this exists for: the camera orbits, but movement used raw world
+	# axes, so pushing the stick "up" sent the player somewhere unrelated to
+	# where the thumb pushed. Reported from device as "movement is terrible".
+	_camera_locked = true
+	var was_demo := demo_mode
+	demo_mode = false
+	_force_input = false
+	player.global_position = Vector3(0, 0.2, 12)
+	await get_tree().physics_frame
+
+	camera.global_position = player.global_position + Vector3(0, 6, 12)
+	camera.look_at(player.global_position + Vector3(0, 1, 0), Vector3.UP)
+	hud.stick.value = Vector2(0, -1)                 # thumb pushed up-screen
+	_read_input()
+	var dir_a := Vector3(player.move_input.x, 0, player.move_input.y).normalized()
+	var away := player.global_position - camera.global_position
+	away.y = 0.0
+	if dir_a.dot(away.normalized()) < 0.9:
+		fails.append("stick up does not move away from the camera - movement is not camera-relative")
+
+	camera.global_position = player.global_position + Vector3(0, 6, -12)
+	camera.look_at(player.global_position + Vector3(0, 1, 0), Vector3.UP)
+	_read_input()
+	var dir_b := Vector3(player.move_input.x, 0, player.move_input.y).normalized()
+	if dir_a.dot(dir_b) > -0.5:
+		fails.append("world direction did not follow the camera when it orbited")
+
+	hud.stick.value = Vector2.ZERO
+	demo_mode = was_demo
+	_camera_locked = false
 
 	# --- 4. the funnel, the economy --------------------------------------
 	tornado.global_position = Vector3(16, 0, -18)
