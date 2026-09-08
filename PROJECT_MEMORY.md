@@ -72,9 +72,16 @@ On-foot character goals:
 
 Environment goals:
 
+- use the classic brick-adventure contrast: a stylized real-world Oklahoma backdrop can be non-brick while characters, vehicles, tools, smashables, rebuildables, and secrets are the conspicuous brick gameplay layer;
 - terrain may be smooth/mobile-safe, but visual dressing should break up large bright rectangles;
 - use shaped dirt/field edges, crops, roadside clutter, horizon forms, brick-built props, storm atmosphere, and authored composition;
 - preserve the accepted continuous collision surface under the farm road.
+
+Authored-level rhythm goal:
+
+- favor short chains such as smash → studs → tool/ability → build → consequence → secret/story beat instead of wide empty objective fields;
+- use short camera reveals, reactive companion/NPC behavior, compact HUD feedback, and original sound to punctuate consequences;
+- the 0.3.5 opening generator/sensor-cage chain is the first reference slice for this pacing language.
 
 ## Approved technical decisions and physical-phone ratings
 
