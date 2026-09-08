@@ -1,0 +1,12 @@
+# Godot editor/import cache - regenerated on open
+.godot/
+*.translation
+
+# Build output
+build/
+export/
+*.apk
+*.aab
+
+# Local capture output (root only - Docs/shots is committed evidence)
+/shots/
