@@ -264,3 +264,50 @@ Two things worth recording:
 It has not been played. The pacing claim — that this is roughly sixty seconds of
 deliberate beats — is a design intention verified only by assertions, not by a
 human moving through it. That is the next thing to check.
+
+---
+
+# Follow-up 3: the harness can actually play
+
+I claimed repeatedly in this project that I could not *play* a build - only watch
+an autopilot drive it. **That was wrong, and it was wrong because I never tested
+it.**
+
+`tools/play.py` drives a build with real synthetic input via the X11 XTEST
+extension - the same mechanism `xdotool` wraps - so the game cannot distinguish
+these events from a physical keyboard. It runs a scripted sequence of holds,
+taps, waits and screen captures against a live game under Xvfb.
+
+## Proof, not assertion
+
+Pixel differences were useless: the storm moves on its own, and a null-input
+control showed 38.6% of pixels changing per interval with no keys sent at all,
+versus 37.2% with keys sent. Indistinguishable.
+
+So the game was made to report its own state instead (`--probe`), and the
+correlation is unambiguous:
+
+```
+t=9.3 - 11.6   holding D   input registers, player (11.6, 2.7) -> (32.9, 20.2)   ~28 m
+t=12.1 - 12.6  released    input 0.00,0.00, player coasts to a stop
+t=13.1         holding A   input flips to -0.98, player reverses
+```
+
+Raw log: `Docs/evidence-input-probe.log`.
+
+## What this changes
+
+- **Our own build can now be playtested by the harness**, not just observed. The
+  authored set piece can be walked, the ability gate approached with the wrong
+  character, the control feel exercised deliberately rather than inferred.
+- The autopilot stops being the only source of cadence data, which matters
+  because every number in this document carries the caveat that an autopilot
+  never hesitates, explores, or gets bored.
+
+## What it does not change
+
+Running the LEGO Indiana Jones demo needs four things. Three are now solved -
+input, capture, and Wine (installable from the Ubuntu repositories, which do
+work; only third-party PPAs are blocked). The fourth is not: **archive.org is
+blocked by the egress proxy, so the demo file cannot be fetched here.** That is a
+transfer problem, not a capability problem, and it is the only remaining wall.

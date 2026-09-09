@@ -75,6 +75,8 @@ var _capture_dir: String = "/home/user/brickstorm_shots"
 var _closeup: bool = false
 var _camera_locked: bool = false
 var playthrough: bool = false
+var probe_mode: bool = false
+var _probe_t: float = 0.0
 var _tel: Array = []
 var _tel_shot: float = 0.0
 var _tel_shots: int = 0
@@ -93,6 +95,7 @@ func _ready() -> void:
 	args.append_array(OS.get_cmdline_user_args())
 	capture_mode = args.has("--capture")
 	playthrough = args.has("--playthrough")
+	probe_mode = args.has("--probe")
 	demo_mode = args.has("--demo") or args.has("--selftest") or capture_mode or playthrough
 
 	_setup_environment()
@@ -599,6 +602,13 @@ func _process(delta: float) -> void:
 	_update_phase(delta)
 	_age_debris(delta)
 	_update_gags()
+	if probe_mode:
+		_probe_t += delta
+		if _probe_t >= 0.4:
+			_probe_t = 0.0
+			var pp := player.global_position
+			print("PROBE t=%.1f pos=%.2f,%.2f,%.2f input=%.2f,%.2f" % [
+				_elapsed, pp.x, pp.y, pp.z, player.move_input.x, player.move_input.y])
 	_update_set_piece(delta)
 	_stream_world(delta)
 	_refresh_near(delta)
