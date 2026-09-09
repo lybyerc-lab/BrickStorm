@@ -161,14 +161,19 @@ static func water_tower(pos: Vector3) -> Structure:
 	return st
 
 
+# Bend rises up the tree: the trunk is planted, the canopy moves, the top tuft
+# moves most. This is the weight TT paint into a plant mesh - here the
+# generator emits it, because the generator IS our modelling tool.
 static func tree(pos: Vector3, scale_f: float = 1.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
-	st.add_brick(1, 1, 2.0 * scale_f, BrickLib.C_BROWN, Vector3(0, 1.0 * scale_f, 0), Vector3.ZERO, false)
+	# The trunk is PLANTED. Bend is per brick and a brick cannot taper, so any
+	# bend at all here slides the trunk's base along the ground.
+	st.add_brick(1, 1, 2.0 * scale_f, BrickLib.C_BROWN, Vector3(0, 1.0 * scale_f, 0), Vector3.ZERO, false, 0.0)
 	var g := BrickLib.C_GREEN
-	st.add_brick(4, 4, H, g, Vector3(0, 2.2 * scale_f, 0))
-	st.add_brick(3, 3, H, g, Vector3(0.2, 2.2 * scale_f + H, -0.1))
-	st.add_brick(2, 2, H, BrickLib.C_LGREEN, Vector3(-0.15, 2.2 * scale_f + H * 2.0, 0.15))
+	st.add_brick(4, 4, H, g, Vector3(0, 2.2 * scale_f, 0), Vector3.ZERO, true, 0.45)
+	st.add_brick(3, 3, H, g, Vector3(0.2, 2.2 * scale_f + H, -0.1), Vector3.ZERO, true, 0.70)
+	st.add_brick(2, 2, H, BrickLib.C_LGREEN, Vector3(-0.15, 2.2 * scale_f + H * 2.0, 0.15), Vector3.ZERO, true, 1.0)
 	st.finish()
 	return st
 
@@ -360,8 +365,9 @@ static func crop_patch(pos: Vector3) -> Structure:
 	for i in range(7):
 		var a: float = TAU * float(i) / 7.0
 		var r: float = 0.7 + fmod(float(i) * 0.7, 0.8)
+		# A crop stalk is nearly all tip - it should whip, not lean.
 		st.add_brick(1, 1, 0.9 + fmod(float(i), 3.0) * 0.15, BrickLib.C_LGREEN,
-			Vector3(cos(a) * r, 0.5, sin(a) * r), Vector3.ZERO, false)
+			Vector3(cos(a) * r, 0.5, sin(a) * r), Vector3.ZERO, false, 0.85)
 	st.finish()
 	return st
 

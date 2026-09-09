@@ -66,13 +66,22 @@ static var _stud_mesh: CylinderMesh = null
 # calls this instead. Before this existed the two hand-copied the same four
 # numbers, which meant giving bricks a fresnel term changed the minifig and
 # the loose debris and left every building in the game untouched.
+# The numbers themselves, so the StandardMaterial3D path and the shader path
+# can both be checked against the same source rather than against each other.
+const PLASTIC_ROUGHNESS := 0.30
+const PLASTIC_METALLIC := 0.0
+const PLASTIC_SPECULAR := 0.62
+const PLASTIC_RIM := 0.55
+const PLASTIC_RIM_TINT := 0.45
+
+
 static func apply_plastic(m: StandardMaterial3D) -> void:
-	m.roughness = 0.30
-	m.metallic = 0.0
-	m.metallic_specular = 0.62
+	m.roughness = PLASTIC_ROUGHNESS
+	m.metallic = PLASTIC_METALLIC
+	m.metallic_specular = PLASTIC_SPECULAR
 	m.rim_enabled = true
-	m.rim = 0.55
-	m.rim_tint = 0.45
+	m.rim = PLASTIC_RIM
+	m.rim_tint = PLASTIC_RIM_TINT
 
 
 static func mat(c: Color) -> StandardMaterial3D:

@@ -682,6 +682,9 @@ func _process(delta: float) -> void:
 		_tick_playthrough(delta)
 	_update_storm_audio()
 	_update_area_state(delta)
+	# One call moves every plant in the world: the foliage all draws through
+	# the same material, which is the point of a world-space wind field.
+	Structure.set_storm(tornado.funnel_pos(), tornado.wind_reach())
 	hud.set_bracing(player.braced)
 	if demo_mode:
 		_demo_smash(delta)
@@ -1825,15 +1828,58 @@ func _run_selftest() -> void:
 	# to one changed the minifig and left every building untouched - and the
 	# screenshots looked "a bit brighter" instead of different. This asserts
 	# they cannot drift apart again.
+	# Both paths are checked against the CONSTANTS, not against each other, so
+	# neither can drag the other along when it drifts.
 	var ref_mat := BrickLib.mat(BrickLib.C_RED)
 	var batch := Structure._material()
-	for prop in ["roughness", "metallic", "metallic_specular", "rim_enabled",
-			"rim", "rim_tint"]:
-		if batch.get(prop) != ref_mat.get(prop):
-			fails.append("plastic drifted: batch %s=%s but BrickLib %s=%s"
-				% [prop, batch.get(prop), prop, ref_mat.get(prop)])
+	var pairs := [
+		["roughness", "p_roughness", BrickLib.PLASTIC_ROUGHNESS],
+		["metallic", "p_metallic", BrickLib.PLASTIC_METALLIC],
+		["metallic_specular", "p_specular", BrickLib.PLASTIC_SPECULAR],
+		["rim", "p_rim", BrickLib.PLASTIC_RIM],
+		["rim_tint", "p_rim_tint", BrickLib.PLASTIC_RIM_TINT],
+	]
+	for pr in pairs:
+		if not is_equal_approx(float(ref_mat.get(pr[0])), float(pr[2])):
+			fails.append("BrickLib material %s=%s, constant says %s"
+				% [pr[0], ref_mat.get(pr[0]), pr[2]])
+		var got: Variant = batch.get_shader_parameter(pr[1])
+		if got == null or not is_equal_approx(float(got), float(pr[2])):
+			fails.append("brick shader %s=%s, constant says %s" % [pr[1], got, pr[2]])
 	if not ref_mat.rim_enabled:
 		fails.append("bricks have no fresnel term - they will read as cardboard")
+
+	# The shader's storm must be the SAME storm the physics uses. If these
+	# diverge the foliage leans one way while the player is pushed another.
+	for wp in [["storm_tangent", Tornado.WIND_TANGENT],
+			["storm_inward", Tornado.WIND_INWARD],
+			["storm_peak", Tornado.WIND_PEAK]]:
+		var gw: Variant = batch.get_shader_parameter(wp[0])
+		if gw == null or not is_equal_approx(float(gw), float(wp[1])):
+			fails.append("shader %s=%s but Tornado says %s" % [wp[0], gw, wp[1]])
+
+	# And the shader must be looking at where the storm actually is.
+	Structure.set_storm(tornado.funnel_pos(), tornado.wind_reach())
+	var sp: Variant = batch.get_shader_parameter("storm_pos")
+	if sp == null or (sp as Vector3).distance_to(tornado.funnel_pos()) > 0.01:
+		fails.append("the shader's storm is not where the storm is")
+
+	# Foliage bends; buildings do not.
+	var probe_tree := PropBuilder.tree(Vector3(0, 0, 0), 1.0)
+	var probe_barn := PropBuilder.barn(Vector3(0, 0, 0))
+	var tip := 0.0
+	for e in probe_tree.entries:
+		tip = maxf(tip, float(e.get("bend", 0.0)))
+	if tip < 0.5:
+		fails.append("tree canopy has no bend weight - it cannot move in the wind")
+	if float(probe_tree.entries[0].get("bend", 0.0)) != 0.0:
+		fails.append("the tree trunk carries bend - its base will slide along the ground")
+	for e in probe_barn.entries:
+		if float(e.get("bend", 0.0)) != 0.0:
+			fails.append("a building carries bend weight - barns do not sway")
+			break
+	probe_tree.queue_free()
+	probe_barn.queue_free()
 	if BrickLib.terrain_mat(BrickLib.C_GREEN).rim_enabled:
 		fails.append("the ground has a grazing-angle response - it is not plastic")
 

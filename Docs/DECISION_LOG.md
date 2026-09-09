@@ -383,3 +383,72 @@ TT also scale specular by a LOD factor so distant geometry loses its highlight
 entirely — cheaper, and it kills shimmer. Godot's `StandardMaterial3D` has no
 per-distance specular, and a custom shader for MultiMesh-batched bricks is a
 larger change than this one. Recorded as absent rather than quietly skipped.
+
+---
+
+## 2026-09-09 — The trees move
+
+`Docs/TT_ENGINE_NOTES.md` section 12: TT drive foliage from a per-vertex bend
+weight the artist paints, a per-plant random seed, and a wind field sampled in
+**world space** so every plant agrees on the wind and a gust sweeps across a
+field. We were making a tornado game in which nothing bent.
+
+### What was built
+
+`shaders/brick.gdshader` — one shader for every brick in the world. It carries
+the plastic look (values taken from `BrickLib`, not retyped) and a vertex wind.
+
+**Bend is per brick, in the instance colour's alpha.** Zero is rigid, which is
+every building, fence and vehicle. Foliage is authored with bend rising toward
+the tips: a tree trunk is 0.0, the canopy 0.45, then 0.70, then 1.0 at the top
+tuft; a crop stalk is 0.85 because it is nearly all tip. Our generator *is* our
+modelling tool, so it emits the weight TT paint by hand.
+
+A brick displaces **rigidly**. It is a LEGO brick; it does not shear.
+
+The wind is the ambient breeze plus the storm. The breeze is evaluated
+analytically in world space rather than sampled from a scrolling texture — same
+idea, no asset, no sampler in a vertex shader. The storm's shape and constants
+come from `Tornado`, passed in as uniforms rather than retyped, because foliage
+leaning one way while the player is pushed another would stop the world being
+one place.
+
+### Three things the checks caught
+
+**The trunk slid along the ground.** Bend is per brick and a brick cannot taper,
+so any bend at all on a one-brick trunk moves its base. It is 0.0 now, and the
+tree reads correctly: leaves rustle, trunk planted.
+
+**The storm leaned the foliage but did not move it.** The storm's field is a
+function of position alone, so it displaced each plant to a new place and held
+it there. A lean is not motion. Turbulence scaled by local wind magnitude fixed
+it — nothing on a calm day, violent at the funnel.
+
+**The first measurement was too blunt to see the fix.** Counting pixels that
+changed between two frames saturates as soon as motion exceeds a pixel or two:
+it rated a tornado at 1.9x a calm breeze. Measuring the *swept silhouette* —
+union minus intersection over several frames — separates them properly.
+
+### Verification
+
+`--selftest` cannot see this: the wind is a vertex shader and the self-test is
+headless. So `tools/wind_probe.gd` renders a tree and a barn side by side with
+a locked camera and measures how far each silhouette sweeps:
+
+```
+WINDPROBE swept: breeze_tree=5.9% storm_tree=23.3% barn=0.0%
+```
+
+The breeze rustles the tree, the storm moves it nearly four times as far, and
+the barn does not move at all. It fails if foliage is static, if a building
+moves, or if the storm moves foliage less than twice as far as a calm day.
+It runs in CI.
+
+`--selftest` covers what it can reach: that both material paths match the
+plastic constants, that the shader's storm constants match `Tornado`'s, that the
+shader is looking at where the storm actually is, that a tree canopy has bend
+and its trunk has none, and that a barn has none anywhere.
+
+`tools/verify_anchors.gd` now scans `.gdshader` as well as `.gd`, and accepts
+`//` comments. A shader carrying load-bearing invariants that the verifier
+cannot see is a rule that quietly rots.

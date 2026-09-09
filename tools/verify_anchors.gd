@@ -15,7 +15,7 @@
 extends SceneTree
 
 const REGISTRY := "res://Docs/CODE_ANCHORS.md"
-const SCAN_DIRS: Array[String] = ["res://scripts", "res://tools"]
+const SCAN_DIRS: Array[String] = ["res://scripts", "res://tools", "res://shaders"]
 
 var _errors: Array[String] = []
 
@@ -83,16 +83,19 @@ func _read_registry() -> Dictionary:
 func _scan_sources() -> Dictionary:
 	var out: Dictionary = {}
 	var re_start := RegEx.new()
-	re_start.compile("^#\\s*\\[(BS:[A-Z0-9_]+:[A-Z0-9_]+)\\]\\s*$")
+	re_start.compile("^(?:#|//)\\s*\\[(BS:[A-Z0-9_]+:[A-Z0-9_]+)\\]\\s*$")
 	var re_end := RegEx.new()
-	re_end.compile("^#\\s*\\[(BS:[A-Z0-9_]+:[A-Z0-9_]+):END\\]\\s*$")
+	re_end.compile("^(?:#|//)\\s*\\[(BS:[A-Z0-9_]+:[A-Z0-9_]+):END\\]\\s*$")
 
 	for dir_path in SCAN_DIRS:
 		var d := DirAccess.open(dir_path)
 		if d == null:
 			continue
 		for fname in d.get_files():
-			if not fname.ends_with(".gd"):
+			# Shaders too. A .gdshader now carries load-bearing invariants - the
+			# wind field has to agree with the physics - and a rule the
+			# verifier cannot see is a rule that quietly rots.
+			if not (fname.ends_with(".gd") or fname.ends_with(".gdshader")):
 				continue
 			var rel := "%s/%s" % [dir_path.replace("res://", ""), fname]
 			_scan_one("%s/%s" % [dir_path, fname], rel, re_start, re_end, out)

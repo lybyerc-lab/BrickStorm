@@ -191,6 +191,20 @@ func _flat_dist(p: Vector3) -> float:
 #   acts on something the player cannot see is in danger.
 # - This is the only wind source. Do not add a second field.
 # ============================================================================
+# The shape of the storm's wind, as numbers rather than literals buried in the
+# function, so the brick shader can be given the SAME ones. If the foliage
+# leans one way while the player is pushed another, the world stops being one
+# place - --selftest asserts the two agree.
+const WIND_TANGENT := 0.78
+const WIND_INWARD := 0.62
+const WIND_PEAK := 30.0
+const WIND_REACH_MUL := 1.7
+
+
+func wind_reach() -> float:
+	return suction_radius * WIND_REACH_MUL
+
+
 func wind_at(p: Vector3) -> Vector3:
 	var c := funnel_pos()
 	var to_c := Vector3(c.x - p.x, 0.0, c.z - p.z)
@@ -199,12 +213,12 @@ func wind_at(p: Vector3) -> Vector3:
 		return Vector3.ZERO
 	var inward := to_c / d
 	var tangent := Vector3(-inward.z, 0.0, inward.x)
-	var reach := suction_radius * 1.7
+	var reach := wind_reach()
 	if d > reach:
 		return Vector3.ZERO
 	var falloff: float = clampf(1.0 - d / reach, 0.0, 1.0)
 	falloff = falloff * falloff
-	return (tangent * 0.78 + inward * 0.62).normalized() * falloff * 30.0
+	return (tangent * WIND_TANGENT + inward * WIND_INWARD).normalized() * falloff * WIND_PEAK
 # [BS:STORM:WIND_FIELD:END]
 
 

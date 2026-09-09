@@ -30,7 +30,9 @@ var _box_mmi: MultiMeshInstance3D = null
 var _stud_mmi: MultiMeshInstance3D = null
 
 static var _box_mesh: BoxMesh = null
-static var _batch_mat: StandardMaterial3D = null
+const SHADER_PATH := "res://shaders/brick.gdshader"
+
+static var _batch_mat: ShaderMaterial = null
 
 
 static func _unit_box() -> BoxMesh:
@@ -44,18 +46,37 @@ static func _unit_box() -> BoxMesh:
 # material, not BrickLib.mat() - so any change to how plastic looks has to
 # land here or it does not land at all. It used to hand-copy BrickLib's
 # numbers, and they silently drifted apart.
-static func _material() -> StandardMaterial3D:
+static func _material() -> ShaderMaterial:
 	if _batch_mat == null:
-		_batch_mat = StandardMaterial3D.new()
-		_batch_mat.vertex_color_use_as_albedo = true
-		BrickLib.apply_plastic(_batch_mat)
+		_batch_mat = ShaderMaterial.new()
+		_batch_mat.shader = load(SHADER_PATH)
+		_batch_mat.set_shader_parameter("p_roughness", BrickLib.PLASTIC_ROUGHNESS)
+		_batch_mat.set_shader_parameter("p_metallic", BrickLib.PLASTIC_METALLIC)
+		_batch_mat.set_shader_parameter("p_specular", BrickLib.PLASTIC_SPECULAR)
+		_batch_mat.set_shader_parameter("p_rim", BrickLib.PLASTIC_RIM)
+		_batch_mat.set_shader_parameter("p_rim_tint", BrickLib.PLASTIC_RIM_TINT)
+		# Taken from Tornado, never retyped here.
+		_batch_mat.set_shader_parameter("storm_tangent", Tornado.WIND_TANGENT)
+		_batch_mat.set_shader_parameter("storm_inward", Tornado.WIND_INWARD)
+		_batch_mat.set_shader_parameter("storm_peak", Tornado.WIND_PEAK)
 	return _batch_mat
 
 
+# Push the storm into the one shared material. One call moves every plant in
+# the world, because they all draw through this material.
+static func set_storm(centre: Vector3, reach: float) -> void:
+	var m := _material()
+	m.set_shader_parameter("storm_pos", centre)
+	m.set_shader_parameter("storm_reach", reach)
+
+
+# `bend` is how much this brick moves in the wind: 0 is rigid, which is every
+# building in the game, and foliage rises toward 1 at the tips. See the shader.
 func add_brick(sw: int, sd: int, h: float, color: Color, pos: Vector3,
-		rot: Vector3 = Vector3.ZERO, studs: bool = true) -> void:
+		rot: Vector3 = Vector3.ZERO, studs: bool = true, bend: float = 0.0) -> void:
 	entries.append({
 		"sw": sw, "sd": sd, "h": h, "color": color, "pos": pos, "rot": rot,
+		"bend": bend,
 		"studs": studs, "torn": false, "stud_from": 0, "stud_count": 0,
 	})
 	var half := Vector3(sw * BrickLib.STUD, h, sd * BrickLib.STUD) * 0.5
@@ -114,7 +135,11 @@ func _build_batches() -> void:
 		var size := Vector3(e["sw"] * BrickLib.STUD, e["h"], e["sd"] * BrickLib.STUD)
 		var xf := _brick_xform(e)
 		bm.set_instance_transform(i, xf * Transform3D(Basis().scaled(size), Vector3.ZERO))
-		bm.set_instance_color(i, e["color"])
+		# Bend goes in the INSTANCE colour's alpha only. e["color"] stays
+		# opaque because tear() hands it to the debris bodies, and a leaf
+		# brick with alpha 0 would come off the tree invisible.
+		var ec: Color = e["color"]
+		bm.set_instance_color(i, Color(ec.r, ec.g, ec.b, e.get("bend", 0.0)))
 
 		if sm != null and e["studs"]:
 			var k: int = e["stud_from"]
@@ -124,7 +149,7 @@ func _build_batches() -> void:
 					var pz: float = (float(z) + 0.5) * BrickLib.STUD - size.z * 0.5
 					var local := Vector3(px, e["h"] * 0.5 + BrickLib.STUD_H * 0.5, pz)
 					sm.set_instance_transform(k, xf * Transform3D(Basis(), local))
-					sm.set_instance_color(k, e["color"])
+					sm.set_instance_color(k, Color(ec.r, ec.g, ec.b, e.get("bend", 0.0)))
 					k += 1
 
 	_box_mmi = MultiMeshInstance3D.new()

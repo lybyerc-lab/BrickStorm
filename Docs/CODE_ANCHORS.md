@@ -138,6 +138,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 ### World
 
+- `[BS:RENDER:WIND]` — `shaders/brick.gdshader` — the vertex wind, and why its storm must be the same storm the physics uses
 - `[BS:RENDER:PLASTIC]` — `scripts/brick_lib.gd` — the one definition of what plastic looks like, and why the fresnel term is bricks-only
 - `[BS:WORLD:ENVIRONMENT]` — `scripts/main.gd` — sky, light, fog
 - `[BS:WORLD:GROUND]` — `scripts/main.gd` — ground plane and crop squares

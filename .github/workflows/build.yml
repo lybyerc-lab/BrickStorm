@@ -65,6 +65,22 @@ jobs:
           "$GODOT" --headless --path . -- --selftest 2>&1 | tee selftest.log | grep -E "SELFTEST"
           grep -q "SELFTEST OK" selftest.log
 
+      # The probe renders for real, so it needs a display and a GL driver.
+      # Everything else in this job is headless.
+      - name: Install a display for the wind probe
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+
+      # The wind is a VERTEX shader: it runs on the GPU and --selftest, which is
+      # headless, cannot see whether anything actually moved. This renders a
+      # tree and a barn side by side and measures how far each silhouette
+      # sweeps. Without it "the trees move" is an assertion about source code.
+      - name: Wind probe (foliage actually moves)
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 900x600x24" "$GODOT" --path . --resolution 900x600 \
+            --script res://tools/wind_probe.gd 2>&1 | tee wind.log | grep -E "WINDPROBE"
+          grep -q "WINDPROBE OK" wind.log
+
       - name: Export Web
         run: |
           mkdir -p build/web
