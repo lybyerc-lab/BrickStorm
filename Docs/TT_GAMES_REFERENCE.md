@@ -29,6 +29,13 @@ Honesty about sourcing, per `Docs/NO_DRIFT_POLICY.md`:
   *why* these mechanics work, and it is opinion.
 - Nothing here was obtained by extracting, decompiling or datamining a shipped
   game. See "The line we do not cross".
+- **The official LEGO Indiana Jones PC demo was tried as a primary source
+  (2026-09-09) and could not be used from this environment.** archive.org is
+  blocked by the egress proxy - download URLs and the metadata API alike - there
+  is no Wine to run a Windows installer, and no GPU to run a 2008 DirectX game
+  meaningfully even if there were. Recorded so nobody spends the attempt again.
+  Observing the demo remains a legitimate and valuable reference route; it just
+  has to happen on a human's machine, not here.
 
 ---
 
