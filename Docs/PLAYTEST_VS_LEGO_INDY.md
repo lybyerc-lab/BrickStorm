@@ -202,3 +202,65 @@ reduce draw calls and per-frame iteration — but their benefit is unproven.
 This is exactly what `Docs/NO_DRIFT_POLICY.md` means by the device being the
 final authority. The next real performance datapoint has to come from the APK on
 hardware.
+
+
+---
+
+# Follow-up 2: the hand-authored set piece
+
+The last finding was that density is not intent — a procedurally scattered
+corridor reads as *a field with objects in it* rather than *a place*. THE HOG LOT
+(`[BS:CONTENT:HOG_LOT]`) is the test of that claim: one yard, every object placed
+by hand, in relation to the others.
+
+![The authored yard](shots/08-authored-set-piece.png)
+
+## What it contains
+
+A fenced farmyard with one entrance and a barn closing the far side, and three
+collectibles that each teach a **different verb**:
+
+| Sensor ball | Where | Teaches |
+|---|---|---|
+| 1 | buried in the haystack, just inside the entrance | **SMASH** |
+| 2 | on top of the water tower | **BUILD** the steps, then **JUMP** |
+| 3 | in the alcove behind a collapsed silo | **SWAP** to Bill |
+
+Plus the gag: a cow on the barn roof. Absurd on sight; when the barn goes it
+lands, complains, and is completely fine — which is North Star Law 1 told as a
+joke rather than stated as a rule.
+
+## Three systems the game did not have before
+
+- **An ability gate.** `Structure.heavy` resists Jo *and the funnel*. A gate the
+  weather solves is not a gate. This is currently the only thing making the
+  character swap matter.
+- **A collectible layer.** The first collectibles in the project. All three pays
+  25,000 studs — deliberately more than a whole round of looting, following the
+  TT lesson that exploration must loudly out-earn grinding.
+- **A build that is a puzzle solution**, not an objective marker: the steps are
+  *how you reach* ball 2.
+
+## Verified
+
+`--selftest` asserts each independently: the storm cannot shift the gate, Jo
+cannot shift the gate, Bill can (44 bricks), all three balls are collectable, and
+the bonus pays. Measured on the landing commit: `sensors=3/3 gate_torn=44`.
+
+## What building it taught
+
+Two things worth recording:
+
+1. **Authored ground has to be reserved.** The first capture had a procedural
+   windmill standing in the middle of the yard — the streaming generator does not
+   know the difference between empty ground and composed ground. Set-piece
+   regions are now excluded from streaming.
+2. **The composition reads immediately.** Side by side with the scattered blocks
+   beyond its fence, the yard looks like somewhere a person decided things should
+   go. That is the difference the last playtest could only assert.
+
+## Honest limit
+
+It has not been played. The pacing claim — that this is roughly sixty seconds of
+deliberate beats — is a design intention verified only by assertions, not by a
+human moving through it. That is the next thing to check.

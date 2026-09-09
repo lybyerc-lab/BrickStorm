@@ -26,6 +26,7 @@ var btn_build: Panel
 var btn_jump: Panel
 var build_label: Label
 var brace_label: Label
+var sensors_label: Label
 var portraits: Array = []
 
 var _toast_timer: float = 0.0
@@ -66,6 +67,10 @@ func _build_readouts() -> void:
 	studs_label = _mk_label("STUDS 0", 30, Color(0.98, 0.85, 0.30))
 	studs_label.position = Vector2(34, 112)
 	add_child(studs_label)
+
+	sensors_label = _mk_label("SENSORS 0/3", 26, Color(0.5, 0.95, 1.0))
+	sensors_label.position = Vector2(34, 152)
+	add_child(sensors_label)
 
 	objective_label = _mk_label("", 26, Color(0.95, 0.96, 0.98))
 	objective_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
@@ -222,6 +227,12 @@ func set_band(band: int, multiplier: int) -> void:
 	var k: float = 1.0 + float(band) * 0.09
 	mult_label.scale = mult_label.scale.lerp(Vector2(k, k), 0.25)
 # [BS:UI:MULTIPLIER:END]
+
+
+func set_sensors(found: int, total: int) -> void:
+	sensors_label.text = "SENSORS %d/%d" % [found, total]
+	if found >= total:
+		sensors_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.3))
 
 
 func set_studs(n: int) -> void:

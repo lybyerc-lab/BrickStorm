@@ -41,6 +41,13 @@ var _stream_z: float = 0.0
 var _near: Array[Structure] = []
 var _near_t: float = 0.0
 var _near_from := Vector3(1e9, 1e9, 1e9)
+var _sp: Dictionary = {}
+var _sp_balls: Array = []
+var _sp_built: bool = false
+var _sp_build_progress: float = 0.0
+var sensors_found: int = 0
+const SENSOR_BONUS := 25000
+const SET_PIECE_Z := 120.0
 var _stream_t: float = 0.0
 var _block_seed: int = 0
 const BLOCK_DEPTH := 34.0
@@ -92,6 +99,8 @@ func _ready() -> void:
 	_build_ground()
 	_build_town()
 	_spawn_actors()
+	# after _spawn_actors: the roof gag needs the comedy layer to exist
+	_spawn_set_piece(Vector3(0, 0, SET_PIECE_Z))
 	_spawn_objective_props()
 	_wire_hud()
 
@@ -263,7 +272,11 @@ func _stream_world(delta: float) -> void:
 	_stream_t = 0.4
 	var front := tornado.funnel_pos().z + STREAM_AHEAD
 	while _stream_z < front:
-		_spawn_block(_stream_z)
+		# Authored ground is reserved. Scattering random props through a
+		# hand-composed set piece destroys the composition, which is the one
+		# thing the set piece exists to demonstrate.
+		if not _is_reserved(_stream_z):
+			_spawn_block(_stream_z)
 		_stream_z += BLOCK_DEPTH
 
 	var cutoff := tornado.funnel_pos().z - STREAM_BEHIND
@@ -276,6 +289,10 @@ func _stream_world(delta: float) -> void:
 			st.queue_free()
 			structures.remove_at(i)
 		i -= 1
+
+
+func _is_reserved(z0: float) -> bool:
+	return z0 + BLOCK_DEPTH > SET_PIECE_Z - 10.0 and z0 < SET_PIECE_Z + 28.0
 
 
 func _rng(n: int) -> float:
@@ -335,47 +352,124 @@ func _spawn_block(z0: float) -> void:
 #   converted to studs, damaged, or removed. They fly, they land, they
 #   are fine. See BS:LAW:NO_HARM.
 # ============================================================================
+# One cow. Used by the herd and by the roof gag alike.
+func _make_cow() -> RigidBody3D:
+	var cow := RigidBody3D.new()
+	cow.mass = 3.0
+	cow.collision_layer = 8
+	cow.collision_mask = 1
+	cow.set_meta("protected", true)
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(1.4, 1.0, 0.8)
+	cs.shape = bs
+	cs.position = Vector3(0, 0.7, 0)
+	cow.add_child(cs)
+
+	var v := Node3D.new()
+	var bodyb := BrickLib.brick_visual(3, 2, 0.6, BrickLib.C_WHITE)
+	bodyb.position = Vector3(0, 0.75, 0)
+	v.add_child(bodyb)
+	var headb := BrickLib.brick_visual(1, 1, 0.5, BrickLib.C_WHITE, false)
+	headb.position = Vector3(0.85, 0.85, 0)
+	v.add_child(headb)
+	for sx in [-0.45, 0.45]:
+		for sz in [-0.28, 0.28]:
+			var leg := BrickLib.brick_visual(1, 1, 0.5, BrickLib.C_BLACK, false)
+			leg.position = Vector3(sx, 0.25, sz)
+			v.add_child(leg)
+	var patch := BrickLib.brick_visual(1, 1, 0.12, BrickLib.C_BLACK, false)
+	patch.position = Vector3(-0.2, 1.06, 0.2)
+	v.add_child(patch)
+	cow.add_child(v)
+	return cow
+
+
 func _build_cows() -> void:
 	critter_root = Node3D.new()
 	critter_root.name = "Critters"
 	add_child(critter_root)
 
 	for p in [Vector3(-4, 0, 12), Vector3(2, 0, 15), Vector3(-8, 0, 17), Vector3(5, 0, 10)]:
-		var cow := RigidBody3D.new()
-		cow.mass = 3.0
-		cow.collision_layer = 8
-		cow.collision_mask = 1
-		cow.set_meta("protected", true)
-		var cs := CollisionShape3D.new()
-		var bs := BoxShape3D.new()
-		bs.size = Vector3(1.4, 1.0, 0.8)
-		cs.shape = bs
-		cs.position = Vector3(0, 0.7, 0)
-		cow.add_child(cs)
-
-		var v := Node3D.new()
-		var bodyb := BrickLib.brick_visual(3, 2, 0.6, BrickLib.C_WHITE)
-		bodyb.position = Vector3(0, 0.75, 0)
-		v.add_child(bodyb)
-		var headb := BrickLib.brick_visual(1, 1, 0.5, BrickLib.C_WHITE, false)
-		headb.position = Vector3(0.85, 0.85, 0)
-		v.add_child(headb)
-		for sx in [-0.45, 0.45]:
-			for sz in [-0.28, 0.28]:
-				var leg := BrickLib.brick_visual(1, 1, 0.5, BrickLib.C_BLACK, false)
-				leg.position = Vector3(sx, 0.25, sz)
-				v.add_child(leg)
-		var patch := BrickLib.brick_visual(1, 1, 0.12, BrickLib.C_BLACK, false)
-		patch.position = Vector3(-0.2, 1.06, 0.2)
-		v.add_child(patch)
-		cow.add_child(v)
-
+		var cow := _make_cow()
 		critter_root.add_child(cow)
 		cow.global_position = p
 
 
 # -------------------------------------------------------------------- actors
 # [BS:WORLD:CRITTERS:END]
+
+
+# ============================================================================
+# [BS:CONTENT:SET_PIECE]
+# Purpose: Place the hand-authored farmyard and wire its three collectibles.
+# Invariants:
+# - Its structures are registered like any others, so the storm can still tear
+#   them - EXCEPT the gate, which is heavy and survives on purpose.
+# - The three balls are the first collectibles in the game. Their payout is
+#   deliberately disproportionate: TT Games pay 50,000 studs for ten minikits
+#   against a level threshold of a few thousand, because the message is that
+#   exploring is loudly rewarded rather than merely permitted.
+#   See Docs/TT_GAMES_REFERENCE.md.
+# - The set piece is placed far enough up the corridor that a player meets it
+#   after learning to move, and is not culled behind the storm before arrival.
+# ============================================================================
+func _spawn_set_piece(origin: Vector3) -> void:
+	_sp = SetPiece.hog_lot(origin)
+	for st in _sp["structures"]:
+		_add_structure(st)
+	(_sp["gate"] as Structure).heavy = true
+
+	for i in range(_sp["balls"].size()):
+		_sp_balls.append(_make_sensor_ball(_sp["balls"][i]))
+
+	# the build site that becomes the steps to the tower
+	var marker := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 1.5
+	tm.outer_radius = 1.8
+	marker.mesh = tm
+	var mm := StandardMaterial3D.new()
+	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mm.albedo_color = Color(0.4, 0.9, 1.0, 0.45)
+	marker.material_override = mm
+	marker.position = _sp["build_pos"] + Vector3(0, 0.06, 0)
+	marker.name = "SetPieceBuildMarker"
+	add_child(marker)
+	_sp["marker"] = marker
+
+	# the gag: a cow, on a roof, for no reason anyone will explain
+	_spawn_roof_cow(_sp["cow_pos"])
+
+
+func _make_sensor_ball(at: Vector3) -> Node3D:
+	var n := Node3D.new()
+	add_child(n)
+	n.global_position = at
+	var ball := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.30
+	sm.height = 0.60
+	sm.radial_segments = 14
+	sm.rings = 8
+	ball.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.45, 0.95, 1.0)
+	m.emission_enabled = true
+	m.emission = Color(0.3, 0.8, 1.0)
+	m.emission_energy_multiplier = 1.6
+	ball.material_override = m
+	n.add_child(ball)
+	var ring := MeshInstance3D.new()
+	var rt := TorusMesh.new()
+	rt.inner_radius = 0.42
+	rt.outer_radius = 0.50
+	ring.mesh = rt
+	ring.material_override = m
+	n.add_child(ring)
+	return n
+# [BS:CONTENT:SET_PIECE:END]
 func _spawn_actors() -> void:
 	debris_root = Node3D.new()
 	debris_root.name = "Debris"
@@ -505,6 +599,7 @@ func _process(delta: float) -> void:
 	_update_phase(delta)
 	_age_debris(delta)
 	_update_gags()
+	_update_set_piece(delta)
 	_stream_world(delta)
 	_refresh_near(delta)
 	if playthrough:
@@ -696,6 +791,8 @@ func _update_context() -> void:
 	elif phase >= Phase.CARRY and player.carrying == null and dorothy != null \
 			and not dorothy_deployed and p.distance_to(dorothy.global_position) < 3.0:
 		act = "GRAB"
+	elif not _sp_built and not _sp.is_empty() and p.distance_to(_sp["build_pos"]) < 3.2:
+		act = "BUILD"
 	elif phase == Phase.BUILD and p.distance_to(build_spot.global_position) < 3.0:
 		act = "BUILD"
 	elif _nearest_vehicle(4.5) != null:
@@ -772,7 +869,8 @@ func _do_smash() -> void:
 			continue
 		if st.global_position.distance_to(p) > reach + 12.0:
 			continue
-		var bodies := st.tear(p, reach, debris_root, 10 - hit)
+		var strength := Structure.HEAVY_STRENGTH if player.character == Player.Character.BILL else 1.0
+		var bodies := st.tear(p, reach, debris_root, 10 - hit, strength)
 		for b in bodies:
 			var away: Vector3 = (b.global_position - p).normalized()
 			b.apply_central_impulse((away + Vector3.UP * 0.9) * 6.5 * b.mass)
@@ -1044,6 +1142,88 @@ func _update_storm_audio() -> void:
 
 
 # ============================================================================
+# [BS:ECONOMY:SENSOR_BALLS]
+# Purpose: The collectible layer - the minikit slot the design always specified.
+# Invariants:
+# - Collecting all three pays SENSOR_BONUS, which is deliberately larger than
+#   a whole round of looting. Exploration must out-earn grinding or nobody
+#   will ever leave the storm's wake.
+# - Balls are never destroyed by the storm and never expire. A collectible the
+#   weather can delete is a collectible that punishes arriving late.
+# - Pickup is a plain distance test on three nodes. It must stay that cheap.
+# ============================================================================
+func _update_set_piece(delta: float) -> void:
+	if _sp.is_empty():
+		return
+	var p := player.global_position
+
+	for i in range(_sp_balls.size()):
+		var n: Node3D = _sp_balls[i]
+		if n == null or not is_instance_valid(n):
+			continue
+		n.rotation.y += delta * 2.2
+		n.position.y += sin(_elapsed * 2.0 + float(i)) * delta * 0.25
+		if n.global_position.distance_to(p + Vector3(0, 0.9, 0)) < 1.9:
+			_collect_sensor(i, n)
+
+	if not _sp_built and build_held and context_action == "BUILD" \
+			and p.distance_to(_sp["build_pos"]) < 3.2:
+		_sp_build_progress += delta * (3.0 if player.character == Player.Character.BILL else 1.0)
+		if _sp_build_progress >= BUILD_TIME:
+			_assemble_steps()
+
+
+func _collect_sensor(i: int, n: Node3D) -> void:
+	_sp_balls[i] = null
+	n.queue_free()
+	sensors_found += 1
+	_log_event("SENSOR", "%d/3" % sensors_found)
+	audio.deployed(n.global_position)
+	comedy.pop(n.global_position + Vector3(0, 1.2, 0), "SENSOR!", Color(0.5, 0.95, 1.0), 130)
+	hud.set_sensors(sensors_found, 3)
+	if sensors_found >= 3:
+		score += SENSOR_BONUS
+		audio.built(player.global_position)
+		hud.toast("ALL SENSORS - +%s" % HUD._commas(SENSOR_BONUS), Color(0.5, 0.95, 1.0))
+		comedy.pop(player.global_position + Vector3(0, 3.2, 0), "DOROTHY LIVES!",
+			Color(1.0, 0.9, 0.3), 165)
+		studfield.spawn_burst(player.global_position + Vector3(0, 1.5, 0), 24)
+	else:
+		hud.toast("SENSOR %d/3" % sensors_found, Color(0.5, 0.95, 1.0))
+
+
+func _assemble_steps() -> void:
+	_sp_built = true
+	var h := 1.2
+	for pos in _sp["steps"]:
+		var st := SetPiece.step_block(pos, h)
+		_add_structure(st)
+		h += 1.2
+	if _sp.has("marker") and is_instance_valid(_sp["marker"]):
+		_sp["marker"].queue_free()
+	_log_event("BUILD", "tower steps assembled")
+	audio.built(_sp["build_pos"])
+	comedy.built(_sp["build_pos"] + Vector3(0, 2.4, 0))
+	hud.toast("STEPS BUILT", Color(0.5, 1.0, 0.6))
+
+
+# The cow is on the roof. Nobody will explain this. When the barn goes, it
+# lands, complains, and is completely fine - which is Law 1, told as a joke.
+func _spawn_roof_cow(at: Vector3) -> void:
+	if critter_root == null:
+		critter_root = Node3D.new()
+		critter_root.name = "Critters"
+		add_child(critter_root)
+	var cow := _make_cow()
+	critter_root.add_child(cow)
+	cow.global_position = at
+	comedy.pop(at + Vector3(0, 1.6, 0), "?", Color(1, 1, 1), 110)
+
+
+# [BS:ECONOMY:SENSOR_BALLS:END]
+
+
+# ============================================================================
 # [BS:COMEDY:GAGS]
 # Purpose: The running jokes - flying livestock and the outhouse.
 # Invariants:
@@ -1292,7 +1472,20 @@ func _grab(name: String) -> void:
 		await RenderingServer.frame_post_draw
 		var img3 := get_viewport().get_texture().get_image()
 		img3.save_png("%s/minifig_face.png" % _capture_dir)
-		print("CAPTURED minifig closeup + face")
+		# An overview of the authored yard, so its COMPOSITION can be judged
+		# against the procedural blocks - which is the whole point of it.
+		var o: Vector3 = _sp["origin"]
+		tornado.global_position = Vector3(0, 0, -900)
+		player.global_position = o + Vector3(0, 0.2, -6)
+		camera.global_position = o + Vector3(-1, 26, -30)
+		camera.look_at(o + Vector3(0, 1, 8), Vector3.UP)
+		await get_tree().process_frame
+		camera.global_position = o + Vector3(-1, 26, -30)
+		camera.look_at(o + Vector3(0, 1, 8), Vector3.UP)
+		await RenderingServer.frame_post_draw
+		var img4 := get_viewport().get_texture().get_image()
+		img4.save_png("%s/setpiece.png" % _capture_dir)
+		print("CAPTURED minifig closeup + face + setpiece")
 		get_tree().quit()
 		return
 	if _capture_i >= _capture_at.size():
@@ -1417,6 +1610,47 @@ func _run_selftest() -> void:
 	for i in range(700):
 		await get_tree().physics_frame
 
+	# --- 4b. the authored set piece: gate, then collectibles --------------
+	player.tumble_timer = 0.0
+	player.invuln_timer = 0.0
+	var gate: Structure = _sp["gate"]
+
+	# The storm must NOT solve the gate. Default strength is what the funnel
+	# and a vehicle ram both use.
+	if gate.tear(gate.global_position, 12.0, debris_root, 10).size() > 0:
+		fails.append("default-strength tearing shifted the heavy gate - the storm solves it")
+
+	player.set_character(Player.Character.JO)
+	player.global_position = gate.global_position + Vector3(0.0, 0.4, -2.2)
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	var gate_before := gate.torn_count
+	for i in range(5):
+		_do_smash()
+		await get_tree().physics_frame
+	if gate.torn_count != gate_before:
+		fails.append("Jo shifted the heavy gate - the ability gate does nothing")
+
+	player.set_character(Player.Character.BILL)
+	for i in range(5):
+		_do_smash()
+		await get_tree().physics_frame
+	if gate.torn_count <= gate_before:
+		fails.append("Bill could not shift the heavy gate")
+	player.set_character(Player.Character.JO)
+
+	var score_pre_sensors := score
+	for i in range(_sp_balls.size()):
+		var nb = _sp_balls[i]
+		if nb != null and is_instance_valid(nb):
+			player.global_position = nb.global_position - Vector3(0, 0.9, 0)
+			await get_tree().process_frame
+			await get_tree().process_frame
+	if sensors_found < 3:
+		fails.append("sensor balls not collectable (%d/3)" % sensors_found)
+	elif score - score_pre_sensors < SENSOR_BONUS:
+		fails.append("collecting all sensors did not pay the bonus")
+
 	# --- 5. every declared sound must exist and be a real stream ----------
 	var missing: Array[String] = []
 	var sounds := 0
@@ -1472,6 +1706,7 @@ func _run_selftest() -> void:
 	print("SELFTEST drove=%.1fm ram_torn=%d smash_torn=%d jump_from=%.2f torn=%d debris=%d studs=%d score=%d phase=%d sounds=%d" % [
 		drove, ram_torn, smash_torn, y0, torn, debris.size(),
 		studfield.studs.size(), score, phase, sounds])
+	print("SELFTEST setpiece sensors=%d/3 gate_torn=%d" % [sensors_found, gate.torn_count])
 	for f in fails:
 		print("SELFTEST FAIL: %s" % f)
 	print("SELFTEST OK" if fails.is_empty() else "SELFTEST FAILED")

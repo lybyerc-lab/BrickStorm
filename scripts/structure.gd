@@ -23,6 +23,7 @@ var entries: Array[Dictionary] = []
 var torn_count: int = 0
 var collider: CollisionShape3D = null
 
+
 var _bmin := Vector3(1e9, 1e9, 1e9)
 var _bmax := Vector3(-1e9, -1e9, -1e9)
 var _box_mmi: MultiMeshInstance3D = null
@@ -145,6 +146,22 @@ func _hide_instance(i: int) -> void:
 		for k in range(int(e["stud_from"]), int(e["stud_from"]) + int(e["stud_count"])):
 			_stud_mmi.multimesh.set_instance_transform(k, zero)
 # [BS:DESTRUCTION:STRUCTURE:END]
+# ============================================================================
+# [BS:CONTENT:ABILITY_GATE]
+# Purpose: Scenery that only a strong character can shift.
+# Invariants:
+# - A heavy structure resists BOTH Jo and the funnel. Surviving the storm is
+#   the point: a gate the tornado clears for you is not a gate, and the level
+#   loses its shape the moment the weather solves it.
+# - Strength is a number so a future third character can sit between the two
+#   without another boolean.
+# - This is the ONLY thing making the character swap matter right now. If it
+#   is ever bypassed - by a vehicle, by a bigger smash, by the storm - the
+#   swap goes back to being decorative.
+# ============================================================================
+var heavy: bool = false
+const HEAVY_STRENGTH := 2.0
+# [BS:CONTENT:ABILITY_GATE:END]
 
 
 func is_rubble() -> bool:
@@ -160,8 +177,11 @@ func is_rubble() -> bool:
 # - Debris bodies inherit the brick's exact world transform, so a structure
 #   never visibly jumps as it comes apart.
 # ============================================================================
-func tear(world_center: Vector3, radius: float, debris_parent: Node3D, max_count: int) -> Array:
+func tear(world_center: Vector3, radius: float, debris_parent: Node3D, max_count: int,
+		strength: float = 1.0) -> Array:
 	var out: Array = []
+	if heavy and strength < HEAVY_STRENGTH:
+		return out
 	if torn_count >= entries.size():
 		return out
 	var r2 := radius * radius

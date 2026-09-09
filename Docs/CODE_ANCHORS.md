@@ -81,6 +81,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 - `[BS:ECONOMY:RISK_BANDS]` — `scripts/tornado.gd` — band thresholds and multipliers
 - `[BS:ECONOMY:THRESHOLD_LOCK]` — `scripts/main.gd` — a crossed threshold is never taken back
+- `[BS:ECONOMY:SENSOR_BALLS]` — `scripts/main.gd` — the collectible layer and its payout
 - `[BS:ECONOMY:STUD_VALUE]` — `scripts/stud_field.gd` — value decided at collection
 - `[BS:ECONOMY:STUD_RECYCLING]` — `scripts/stud_field.gd` — cap behaviour
 
@@ -116,6 +117,13 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:AUDIO:STUD_LADDER]` — `scripts/audio.gd` — rising pitch through a stud streak
 - `[BS:AUDIO:STORM_ROAR]` — `scripts/main.gd` — the funnel's roar as the primary risk signal
 - `[BS:AUDIO:ENGINE]` — `scripts/vehicle.gd` — engine loop pitched by road speed
+
+### Content (hand-authored)
+
+- `[BS:CONTENT:HOG_LOT]` — `scripts/set_piece.gd` — the authored farmyard; three collectibles, three verbs
+- `[BS:CONTENT:BUILD_STEPS]` — `scripts/set_piece.gd` — the staircase the build assembles
+- `[BS:CONTENT:SET_PIECE]` — `scripts/main.gd` — placement and wiring of the authored piece
+- `[BS:CONTENT:ABILITY_GATE]` — `scripts/structure.gd` — heavy scenery only Bill can shift
 
 ### Comedy
 
