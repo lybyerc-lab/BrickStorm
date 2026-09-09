@@ -14,6 +14,7 @@ signal build_completed(buildable: Node3D)
 @export_category("Build Interaction")
 @export var stud_reward: int = 150
 @export var build_duration: float = 0.72
+@export var build_recipe: BuildRecipe
 @export var activation_radius: float = 2.8
 @export var completion_message: String = "BUILD COMPLETE"
 
@@ -38,6 +39,7 @@ func _ready() -> void:
 	super._ready()
 	_add_interaction_shape()
 	build_blueprint()
+	_ensure_build_recipe()
 
 func build_blueprint() -> void:
 	pass
@@ -96,12 +98,22 @@ func interact(actor: Node3D) -> void:
 	remove_from_group(GameConstants.GROUP_INTERACTABLE)
 	GameEvents.context_prompt_changed.emit("")
 	GameEvents.toast_requested.emit("BUILDING...")
+	var recipe: BuildRecipe = _get_build_recipe()
+	AudioDirector.play_build_snap(0)
+	var announced_orders: Dictionary[int, bool] = {}
+	for order_value: int in _build_orders:
+		if announced_orders.has(order_value):
+			continue
+		announced_orders[order_value] = true
+		var snap_delay: float = recipe.get_snap_delay(order_value)
+		var snap_timer: SceneTreeTimer = get_tree().create_timer(snap_delay)
+		snap_timer.timeout.connect(AudioDirector.play_build_snap.bind(order_value))
 	var build_tween: Tween = create_tween()
 	build_tween.set_parallel(true)
 	for part_index in range(_parts.size()):
-		var part_delay: float = float(_build_orders[part_index]) * 0.035
-		build_tween.tween_property(_parts[part_index], "position", _target_positions[part_index], build_duration).set_delay(part_delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		build_tween.tween_property(_parts[part_index], "rotation_degrees", _target_rotations[part_index], build_duration * 0.82).set_delay(part_delay)
+		var part_delay: float = recipe.get_part_delay(part_index, _build_orders[part_index])
+		build_tween.tween_property(_parts[part_index], "position", _target_positions[part_index], recipe.move_duration).set_delay(part_delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		build_tween.tween_property(_parts[part_index], "rotation_degrees", _target_rotations[part_index], recipe.get_rotation_duration()).set_delay(part_delay)
 	build_tween.finished.connect(_finish_build)
 
 func use_built_object(_actor: Node3D) -> void:
@@ -112,11 +124,27 @@ func _finish_build() -> void:
 	built = true
 	GameManager.add_studs(stud_reward)
 	GameEvents.toast_requested.emit(completion_message)
-	GameEvents.camera_shake_requested.emit(0.16, 0.18)
+	AudioDirector.play_build_complete()
+	var recipe: BuildRecipe = _get_build_recipe()
+	GameEvents.camera_shake_requested.emit(recipe.camera_shake_strength, recipe.camera_shake_duration)
+	GameEvents.camera_focus_requested.emit(global_position + Vector3.UP * 1.1, recipe.camera_focus_duration, recipe.camera_focus_fov)
 	GameEvents.build_completed.emit(self)
 	build_completed.emit(self)
 	if post_build_usable:
 		add_to_group(GameConstants.GROUP_INTERACTABLE)
+
+func _ensure_build_recipe() -> void:
+	if build_recipe != null:
+		return
+	build_recipe = BuildRecipe.new()
+	var part_ids: Array[StringName] = []
+	for part: Node3D in _parts:
+		part_ids.append(StringName(part.name))
+	build_recipe.configure_from_build_orders(part_ids, _build_orders, build_duration)
+
+func _get_build_recipe() -> BuildRecipe:
+	_ensure_build_recipe()
+	return build_recipe
 
 func _try_use_built(actor: Node3D) -> void:
 	if not post_build_usable:
