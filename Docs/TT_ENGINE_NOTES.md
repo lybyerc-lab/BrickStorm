@@ -330,3 +330,85 @@ their code and an absence in ours.
 
 They also shipped a flag called `DisableNarrowSocks`, which is offered here
 without further comment.
+
+---
+
+## 12. Modelling: what a model has to carry
+
+The vertex shaders declare the mesh format exactly, so this is not inference.
+
+### The vertex format
+
+| Attribute | Notes |
+|---|---|
+| `position`, `position1` | a **second position stream** - see morphing below |
+| `normal` | and its **length is meaningful** - see section 10 |
+| `tangent`, `tangent2`, `bitangent` | full basis stored, not derived; a second tangent for layer 2 |
+| `uvSet0`, `uvSet2` | two UV sets, packed **two per attribute** (`uvSet01`, `uvSet23`) to save slots |
+| `colorSet0..3` | **four vertex colour channels**, the upper two riding in texcoord slots |
+| `lightDirSet`, `lightColSet` | baked light **direction and colour**, per vertex |
+| `blendWeight0`, `blendIndices0` | skinning |
+
+Things worth stopping on:
+
+- **Three bones per vertex, not four.** `computeVertexSkin` takes exactly three
+  matrices and three weights, and only `blendIndices0.xyz` is ever read. The
+  attribute is a `half4`; the fourth slot is simply not paid for.
+- **Prelighting bakes a light DIRECTION, not just a colour.** `lightDirSet` and
+  `lightColSet` are per-vertex attributes. A baked colour alone is dead under a
+  normal map; keeping the dominant direction means baked lighting still
+  responds to surface detail. This is the detail that makes their static
+  lighting look lit rather than painted.
+- **A two-pose morph path.**
+  `lerp(vin.position, vin.position1, vs_fastBlendWeights.x)` - two positions per
+  vertex and one uniform weight. Cheap shape blending with no skinning.
+- **Four colour sets** is a lot. One is albedo/prelight; the rest are free
+  channels for masks, wear, or per-vertex parameters.
+
+### LOD is a blend, not a switch
+
+`varying_lodFactor` is documented in the source as "0 means no lod, 1 means the
+lod has been reached" - a continuous factor. It multiplies specular, refraction
+and the glass distortion, so **expensive effects fade out with distance rather
+than popping**. Separately, `_LR` low-detail meshes are authored as their own
+files. Two different mechanisms: authored geometry LOD, and a continuous
+shading LOD that cross-fades.
+
+### Vegetation carries bend weights, and this is the gap in our game
+
+There are three vertex wind functions (`computeVertexWindOffset`, `...Offset2`,
+`...OffsetTree`), all driven by a per-vertex `vs_plantParams` half4:
+
+- `.x`, `.y` — a per-plant random offset, used both to offset where this plant
+  samples the wind and as its idle-sway direction, so no two plants move alike
+- `.z` — **bend weight**, remapped from a signed authored range. Zero at the
+  trunk base, one at the leaf tips. **The artist paints this.**
+- `.w` — how much this vertex swings tangentially as well as downwind
+
+Wind itself is a **scrolling texture sampled in world space** (`wind_sampler`,
+offset by `wind_params.x`), with two signed values packed per channel by
+splitting integer and fractional parts, and bilinear filtering done by hand in
+the shader. Because every plant samples one world-space field, they all agree
+on which way the wind is blowing - gusts sweep across a field instead of each
+plant wobbling on its own timer.
+
+**We are making a tornado game in which the trees do not move.** Of everything
+in this document this is the most obviously missing thing, and the modelling
+requirement is small: our generated foliage needs a per-vertex bend weight and
+a per-instance random seed, which our own generator can emit for free.
+
+### Other conventions
+
+- **Locators are the artist-to-code contract.** `Locator`, `LocatorRange`,
+  `LocatorRangeXZ`, `LocatorRangeY`, `LocatorIsFirstInSet`, `LocatorOnScreen` -
+  named nulls placed in the model in Maya, queried by gameplay as ranges. Not
+  hard-coded offsets in code.
+- **`RigidAnimFrame`** - hierarchical rigid animation for props, a separate
+  path from skinning. A swinging gate does not need a skeleton.
+- Characters have a `.gsc` as well as a `.ghg` (`chars\%s\%s.gsc`), so a
+  character is a scene plus a rig, not one file.
+- The engine is `nu2api` (`nucore`, `numath`, `nu3d`, `gamelib`) under a
+  `gameapi` layer, with PC-specific code isolated in `nu3d/pc/`. `gameapi`
+  contains a **level editor** (`edlevel/`, including splines) and a cutscene
+  module. `nuinstsurfgeom` is the instanced-surface-geometry system - their
+  equivalent of the MultiMesh batching we use for bricks.
