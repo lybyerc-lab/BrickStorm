@@ -13,10 +13,10 @@ extends Resource
 @export var start_hold_seconds: float = 0.12
 @export var pivot_hold_seconds: float = 0.10
 @export var land_hold_seconds: float = 0.12
-@export var pose_return_rate: float = 22.0
+@export var pose_return_rate: float = 18.0
 
 @export_category("Stride")
-@export var stride_phase_rate: float = 2.05
+@export var stride_phase_rate: float = 1.88
 @export var footstep_phase_step: float = PI
 
 @export_category("Semantic Events")

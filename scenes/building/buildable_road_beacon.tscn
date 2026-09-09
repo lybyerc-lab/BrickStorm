@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/building/buildable_road_beacon.gd" type="Script" id="1"]
+
+[node name="BuildableRoadBeacon" type="Area3D"]
+script = ExtResource("1")
