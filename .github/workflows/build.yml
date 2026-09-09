@@ -65,10 +65,23 @@ jobs:
           "$GODOT" --headless --path . -- --selftest 2>&1 | tee selftest.log | grep -E "SELFTEST"
           grep -q "SELFTEST OK" selftest.log
 
-      # The probe renders for real, so it needs a display and a GL driver.
-      # Everything else in this job is headless.
-      - name: Install a display for the wind probe
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      # The probe renders for real, so it needs a display. Everything else in
+      # this job is headless.
+      #
+      # Do NOT reach for apt unless the display is actually missing. The runner
+      # image ships third-party apt repositories we have nothing to do with,
+      # and one of them (Google Chrome) served a bad index on 2026-09-09,
+      # failing `apt-get update` with exit 100 and taking the whole build with
+      # it. An unrelated repository must not be able to break this.
+      - name: Ensure a display for the wind probe
+        run: |
+          if command -v xvfb-run >/dev/null 2>&1; then
+            echo "xvfb-run already present"
+          else
+            sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xvfb
+          fi
 
       # The wind is a VERTEX shader: it runs on the GPU and --selftest, which is
       # headless, cannot see whether anything actually moved. This renders a
