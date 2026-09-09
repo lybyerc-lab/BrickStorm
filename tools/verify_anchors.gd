@@ -95,7 +95,8 @@ func _scan_sources() -> Dictionary:
 			# Shaders too. A .gdshader now carries load-bearing invariants - the
 			# wind field has to agree with the physics - and a rule the
 			# verifier cannot see is a rule that quietly rots.
-			if not (fname.ends_with(".gd") or fname.ends_with(".gdshader")):
+			if not (fname.ends_with(".gd") or fname.ends_with(".gdshader")
+					or fname.ends_with(".gdshaderinc")):
 				continue
 			var rel := "%s/%s" % [dir_path.replace("res://", ""), fname]
 			_scan_one("%s/%s" % [dir_path, fname], rel, re_start, re_end, out)

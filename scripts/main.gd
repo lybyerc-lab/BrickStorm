@@ -203,11 +203,21 @@ func _build_ground() -> void:
 	body.add_child(cs)
 	add_child(body)
 
+	# The ground is a BASEPLATE. It was a smooth plane, and a world where
+	# nothing the bricks stand on is itself a brick reads as a game with blocks
+	# in it rather than as a LEGO game. See shaders/baseplate.gdshader.
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(420, 420)
+	pm.subdivide_width = 4
+	pm.subdivide_depth = 4
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
-	mi.material_override = BrickLib.terrain_mat(Color(0.42, 0.58, 0.26))
+	var gm := ShaderMaterial.new()
+	gm.shader = load("res://shaders/baseplate.gdshader")
+	gm.set_shader_parameter("base_color", Color(0.42, 0.58, 0.26))
+	gm.set_shader_parameter("stud_pitch", BrickLib.STUD)
+	gm.set_shader_parameter("stud_radius", BrickLib.STUD_R)
+	mi.material_override = gm
 	add_child(mi)
 
 	# crop squares, so the funnel's track across the fields reads from the air
@@ -1820,6 +1830,40 @@ func _run_selftest() -> void:
 			missing.append("loop/%s (stream empty)" % k)
 	if not missing.is_empty():
 		fails.append("audio assets missing or empty: %s" % ", ".join(missing))
+
+	# --- 4b. the brick mesh is a closed, correctly-wound solid ------------
+	# A backwards face means you see straight through the brick and out its
+	# far side. Hand-tracking the winding of 44 triangles got 16 of them wrong
+	# and it shipped into a screenshot before anyone noticed, so it is checked.
+	var bm2 := BrickLib.brick_mesh()
+	var arrs: Array = bm2.surface_get_arrays(0)
+	var bverts: PackedVector3Array = arrs[Mesh.ARRAY_VERTEX]
+	var bnorms: PackedVector3Array = arrs[Mesh.ARRAY_NORMAL]
+	var wrong := 0
+	var edge_use: Dictionary = {}
+	for ti in range(bverts.size() / 3):
+		var va := bverts[ti * 3]
+		var vb := bverts[ti * 3 + 1]
+		var vc := bverts[ti * 3 + 2]
+		var geo := (vb - va).cross(vc - va)
+		if geo.length() < 1e-9 or geo.normalized().dot(bnorms[ti * 3]) < 0.0:
+			wrong += 1
+		for ei in range(3):
+			var e0 := bverts[ti * 3 + ei]
+			var e1 := bverts[ti * 3 + (ei + 1) % 3]
+			var key := "%.4f,%.4f,%.4f|%.4f,%.4f,%.4f" % [
+				minf(e0.x, e1.x), minf(e0.y, e1.y), minf(e0.z, e1.z),
+				maxf(e0.x, e1.x), maxf(e0.y, e1.y), maxf(e0.z, e1.z)]
+			edge_use[key] = int(edge_use.get(key, 0)) + 1
+	if wrong != 0:
+		fails.append("%d brick triangles face inwards - you can see through bricks" % wrong)
+	for k in edge_use:
+		if int(edge_use[k]) != 2:
+			fails.append("the brick mesh is not a closed solid")
+			break
+	if bverts.size() / 3 < 30:
+		fails.append("the brick has only %d triangles - it is not chamfered"
+			% (bverts.size() / 3))
 
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game

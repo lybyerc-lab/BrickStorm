@@ -29,16 +29,19 @@ var _bmax := Vector3(-1e9, -1e9, -1e9)
 var _box_mmi: MultiMeshInstance3D = null
 var _stud_mmi: MultiMeshInstance3D = null
 
-static var _box_mesh: BoxMesh = null
+static var _box_mesh: Mesh = null
 const SHADER_PATH := "res://shaders/brick.gdshader"
+const STUD_SHADER_PATH := "res://shaders/stud.gdshader"
 
 static var _batch_mat: ShaderMaterial = null
+static var _stud_mat: ShaderMaterial = null
 
 
-static func _unit_box() -> BoxMesh:
+# A chamfered unit cube, not a BoxMesh. See BrickLib.brick_mesh - the sharp
+# edges of a plain box are most of why the world read as generic blocks.
+static func _unit_box() -> Mesh:
 	if _box_mesh == null:
-		_box_mesh = BoxMesh.new()
-		_box_mesh.size = Vector3.ONE
+		_box_mesh = BrickLib.brick_mesh()
 	return _box_mesh
 
 
@@ -60,6 +63,19 @@ static func _material() -> ShaderMaterial:
 		_batch_mat.set_shader_parameter("storm_inward", Tornado.WIND_INWARD)
 		_batch_mat.set_shader_parameter("storm_peak", Tornado.WIND_PEAK)
 	return _batch_mat
+
+
+# Studs are vertex-coloured like the boxes, but rim-free.
+static func _stud_material() -> ShaderMaterial:
+	if _stud_mat == null:
+		_stud_mat = ShaderMaterial.new()
+		_stud_mat.shader = load(STUD_SHADER_PATH)
+		_stud_mat.set_shader_parameter("p_roughness", 0.62)
+		_stud_mat.set_shader_parameter("p_metallic", 0.0)
+		_stud_mat.set_shader_parameter("p_specular", 0.30)
+		_stud_mat.set_shader_parameter("p_rim", 0.0)
+		_stud_mat.set_shader_parameter("p_rim_tint", 0.5)
+	return _stud_mat
 
 
 # Push the storm into the one shared material. One call moves every plant in
@@ -160,7 +176,17 @@ func _build_batches() -> void:
 	if sm != null:
 		_stud_mmi = MultiMeshInstance3D.new()
 		_stud_mmi.multimesh = sm
-		_stud_mmi.material_override = _material()
+		# Studs take the rim-free stud material, not the full plastic one -
+		# see BrickLib.stud_mat. They are too small to survive a fresnel term
+		# at gameplay distance.
+		_stud_mmi.material_override = _stud_material()
+		# STUDS DO NOT CAST SHADOWS. They are the smallest curved geometry in
+		# the game and they sit at the shadow map's precision limit, so they
+		# shadow THEMSELVES - which renders every stud as a dark dithered disc
+		# lit only by ambient. It looked like the studs were black; they were
+		# in their own shadow. They still receive shadows, and not casting also
+		# takes thousands of tiny casters out of the shadow pass.
+		_stud_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_stud_mmi)
 
 

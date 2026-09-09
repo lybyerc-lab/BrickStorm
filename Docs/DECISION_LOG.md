@@ -452,3 +452,72 @@ and its trunk has none, and that a barn has none anywhere.
 `tools/verify_anchors.gd` now scans `.gdshader` as well as `.gd`, and accepts
 `//` comments. A shader carrying load-bearing invariants that the verifier
 cannot see is a rule that quietly rots.
+
+---
+
+## 2026-09-09 — "It feels like Roblox with mega blocks in it"
+
+Device feedback, and it was right. Three causes, all of them structural rather
+than a matter of taste.
+
+**Every brick was a bare `BoxMesh`.** A LEGO brick is injection-moulded and
+every edge carries a chamfer; that chamfer catches a different light angle from
+either face it joins, so an edge reads as an edge from any direction. A sharp
+box gives one flat tone per face and reads as a primitive. `BrickLib.brick_mesh`
+is now a chamfered cube - 44 triangles instead of 12, one shared mesh so the
+MultiMesh batching is untouched. The chamfer is proportional rather than
+absolute, because an absolute one would need a mesh per brick size and would
+multiply the draw calls the batching exists to remove.
+
+**The ground was a smooth 420m plane.** It is half of every frame, and a world
+where nothing the bricks stand on is itself a brick reads as a game with blocks
+in it. It is a baseplate now: studs on the real stud pitch, locked to world
+space so they line up with what is built on them, plate seams every 16 studs,
+and the studs fade out with distance because at 80m they are only aliasing.
+They are shaded, not modelled - a 420m plane of real stud geometry is millions
+of triangles for something never seen in silhouette.
+
+**The minifig had no stud on its head.** That is the single most identifying
+feature a minifig has. It also had a plain box for a torso where the real part
+is a trapezoid, and pegs for hands where the real part is a C-shaped clip. All
+three are fixed. This is a first pass, not a finished character.
+
+### The bug this uncovered, and how badly it was chased
+
+The chamfered mesh shipped with **16 of its 44 triangles wound backwards** -
+hand-tracking the orientation of six faces, twelve edges and eight corners.
+A backwards face means you see through the brick, and it went into a screenshot
+before it was spotted. The winding is now derived from the geometry rather than
+asserted by hand: the part is convex and every face is built with its true
+outward normal, so it can simply be asked which way round it goes.
+`--selftest` checks the mesh is closed, correctly wound and actually chamfered.
+
+Then every stud in the world rendered as a dark disc. Three wrong theories were
+chased in order - the sky ambient (the storm sky is dark overhead, so up-facing
+surfaces are dim), a material cache collision, and specular aliasing on tiny
+curved geometry - before a controlled probe at gameplay distance with shadows
+on and off showed it in one image. **A stud stands 6cm proud of a large flat
+brick top. That brick casts into the shadow map, and at the stud's texel the
+recorded depth is the brick top, so the stud's own surface is classified as
+being behind a caster.** Studs no longer cast or receive shadows; they are 6cm
+bumps and no shadow that matters falls on one alone.
+
+The magenta test is worth recording as a technique: setting the sky and ground
+to saturated primaries and re-rendering showed the studs taking the sky colour,
+which said "these surfaces are lit only by ambient" and ruled out the material
+in one shot.
+
+### What is NOT proven
+
+`tools/stud_probe.gd` renders that exact case and passes. **It could not be
+made to fail by reverting the fix**, so it is a smoke test and not a verified
+regression gate, and it is deliberately not wired into CI as one. Recorded as
+unproven rather than described as a guard.
+
+### Still not done
+
+Part variety. Every prop is still assembled from rectangular boxes - no slopes,
+no tiles, no arches, no round bricks. A LEGO roof is made of 45-degree slope
+bricks and ours is made of boxes, which is the remaining half of "mega blocks".
+That is content work across every prop in `prop_builder.gd`, not a material
+change, and it is the next thing.

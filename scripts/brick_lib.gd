@@ -41,6 +41,116 @@ const C_TRANS  := Color(0.55, 0.78, 0.88)
 
 static var _mats: Dictionary = {}
 static var _stud_mesh: CylinderMesh = null
+static var _brick_mesh: ArrayMesh = null
+
+
+# ============================================================================
+# [BS:BUILD:CHAMFER]
+# Purpose: The brick mesh. A LEGO brick is injection-moulded, so every edge
+#   carries a small chamfer, and that chamfer is the whole reason a brick reads
+#   as moulded plastic rather than as a primitive.
+# Invariants:
+# - A BARE BoxMesh IS WHY THE WORLD LOOKED LIKE MEGA BLOKS. Sharp edges give a
+#   single flat tone per face and no transition between them; the chamfer
+#   catches a different light angle from either face it joins, so an edge reads
+#   as an edge from any direction. This is the cheapest LEGO signal there is.
+# - The chamfer is PROPORTIONAL, not absolute. Every brick in the world shares
+#   one mesh so they can batch into a single MultiMesh, and that mesh is scaled
+#   per instance - an absolute chamfer would need per-size meshes and would
+#   multiply the draw calls the batching exists to remove.
+# - Keep it small. Past about 6% the bricks start to look like soap.
+# ============================================================================
+const CHAMFER := 0.035
+
+
+static func brick_mesh() -> ArrayMesh:
+	if _brick_mesh != null:
+		return _brick_mesh
+	var c := CHAMFER
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	# Six inset faces, twelve edge chamfers, eight corner triangles.
+	for axis in range(3):
+		for dir in [-1.0, 1.0]:
+			var n := Vector3.ZERO
+			n[axis] = dir
+			var u := Vector3.ZERO
+			u[(axis + 1) % 3] = 1.0
+			var v := Vector3.ZERO
+			v[(axis + 2) % 3] = 1.0
+			var centre := n * 0.5
+			var q := [
+				centre + (u * -1.0 + v * -1.0) * (0.5 - c),
+				centre + (u * 1.0 + v * -1.0) * (0.5 - c),
+				centre + (u * 1.0 + v * 1.0) * (0.5 - c),
+				centre + (u * -1.0 + v * 1.0) * (0.5 - c),
+			]
+			_quad(st, q[0], q[1], q[2], q[3], n, bool(dir > 0.0))
+
+	# Edge chamfers: for each pair of axes, the four edges they share.
+	for a in range(3):
+		for b in range(a + 1, 3):
+			var other := 3 - a - b
+			for sa in [-1.0, 1.0]:
+				for sb in [-1.0, 1.0]:
+					var na := Vector3.ZERO
+					na[a] = sa
+					var nb := Vector3.ZERO
+					nb[b] = sb
+					var e := Vector3.ZERO
+					e[other] = 1.0
+					var p0 := na * 0.5 + nb * (0.5 - c) - e * (0.5 - c)
+					var p1 := na * 0.5 + nb * (0.5 - c) + e * (0.5 - c)
+					var p2 := na * (0.5 - c) + nb * 0.5 + e * (0.5 - c)
+					var p3 := na * (0.5 - c) + nb * 0.5 - e * (0.5 - c)
+					var nn := (na + nb).normalized()
+					_quad(st, p0, p1, p2, p3, nn, bool(sa * sb > 0.0))
+
+	# Corners.
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				var s3 := Vector3(sx, sy, sz)
+				var a0 := Vector3(sx * 0.5, sy * (0.5 - c), sz * (0.5 - c))
+				var b0 := Vector3(sx * (0.5 - c), sy * 0.5, sz * (0.5 - c))
+				var c0 := Vector3(sx * (0.5 - c), sy * (0.5 - c), sz * 0.5)
+				var nn := s3.normalized()
+				var flip: bool = sx * sy * sz < 0.0
+				_tri(st, a0, b0, c0, nn, flip)
+
+	st.generate_tangents()
+	_brick_mesh = st.commit()
+	return _brick_mesh
+
+
+static func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3,
+		n: Vector3, flip: bool) -> void:
+	if flip:
+		_tri(st, a, b, c, n, false)
+		_tri(st, a, c, d, n, false)
+	else:
+		_tri(st, a, c, b, n, false)
+		_tri(st, a, d, c, n, false)
+
+
+# Winding is DERIVED, not asserted. Hand-tracking the orientation of 44
+# triangles across six faces, twelve edges and eight corners got 16 of them
+# backwards, and a backwards face means you see straight through the brick.
+# The part is convex and every face here is supplied with its true outward
+# normal, so the geometry can simply be asked which way round it goes.
+static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
+		n: Vector3, _flip: bool) -> void:
+	var p1 := b
+	var p2 := c
+	if (b - a).cross(c - a).dot(n) < 0.0:
+		p1 = c
+		p2 = b
+	for p in [a, p1, p2]:
+		st.set_normal(n)
+		st.set_uv(Vector2(p.x + 0.5, p.z + 0.5))
+		st.add_vertex(p)
+# [BS:BUILD:CHAMFER:END]
 
 # ============================================================================
 # [BS:RENDER:PLASTIC]
@@ -82,6 +192,38 @@ static func apply_plastic(m: StandardMaterial3D) -> void:
 	m.rim_enabled = true
 	m.rim = PLASTIC_RIM
 	m.rim_tint = PLASTIC_RIM_TINT
+
+
+# Studs get their own material, and it is NOT the full plastic one.
+#
+# A stud is the smallest curved thing in the game. From a gameplay camera it is
+# a few pixels across, and a few pixels of low-roughness curved surface with a
+# strong fresnel term is a specular ALIAS: the highlight lands on a sub-pixel
+# sliver, the renderer samples the sky reflection instead of the albedo, and
+# every stud reads as a dark dithered disc. Up close they looked perfect, which
+# is what made this hard to find - it only happens at distance.
+#
+# TT solve exactly this by scaling specular with a LOD factor so distant
+# geometry loses its highlight (Docs/TT_ENGINE_NOTES.md 10). We have no
+# per-distance specular on StandardMaterial3D, so the studs simply do not take
+# the fresnel: they are rougher and rim-free, and they read as the brick's
+# colour from every distance. The flat top still catches the sun.
+static func stud_mat(c: Color) -> StandardMaterial3D:
+	var key: int = c.to_rgba32() ^ 0x2a2a2a2a
+	if _mats.has(key):
+		return _mats[key]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.roughness = 0.62
+	m.metallic = 0.0
+	m.metallic_specular = 0.30
+	m.rim_enabled = false
+	# The same reason studs use a dedicated shader in Structure: a stud stands
+	# 6cm proud of the brick that casts it into shadow, and its own top reads
+	# as shadowed. See shaders/stud.gdshader.
+	m.set_flag(BaseMaterial3D.FLAG_DONT_RECEIVE_SHADOWS, true)
+	_mats[key] = m
+	return m
 
 
 static func mat(c: Color) -> StandardMaterial3D:
@@ -139,10 +281,12 @@ static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: b
 	var root := Node3D.new()
 	var size := Vector3(sw * STUD, h, sd * STUD)
 
-	var box := BoxMesh.new()
-	box.size = size
+	# The shared chamfered cube, scaled - not a BoxMesh. The minifig and the
+	# loose debris are built from these, and they have to be moulded plastic
+	# for the same reason every other brick does.
 	var mi := MeshInstance3D.new()
-	mi.mesh = box
+	mi.mesh = brick_mesh()
+	mi.scale = size
 	mi.material_override = mat(color)
 	root.add_child(mi)
 
@@ -161,7 +305,9 @@ static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: b
 				i += 1
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.material_override = mat(color)
+		mmi.material_override = stud_mat(color)
+		# See Structure.finish: studs self-shadow into dark dithered discs.
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mmi)
 
 	return root
@@ -264,10 +410,18 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		foot.scale = Vector3(0.84, 1.0, 1.20)
 		hip.add_child(foot)
 
-	# torso tapers slightly toward the neck, like the real part
-	var t := brick_visual(2, 1, 0.56, shirt, false)
-	t.position = Vector3(0, 0.99, 0)
+	# The real torso is a TRAPEZOID - narrow at the neck, flaring to the waist,
+	# with the shoulders cut back. A plain box is the shape a generic blocky
+	# avatar has, and it reads as one. Two stacked sections approximate the
+	# flare without a custom mesh.
+	var t := brick_visual(2, 1, 0.30, shirt, false)
+	t.position = Vector3(0, 0.86, 0)
+	t.scale = Vector3(1.0, 1.0, 1.0)
 	root.add_child(t)
+	var t_up := brick_visual(2, 1, 0.28, shirt, false)
+	t_up.position = Vector3(0, 1.14, 0)
+	t_up.scale = Vector3(0.86, 1.0, 0.92)
+	root.add_child(t_up)
 	var neck := brick_visual(1, 1, 0.10, shirt, false)
 	neck.position = Vector3(0, 1.30, 0)
 	neck.scale = Vector3(0.9, 1.0, 0.8)
@@ -283,17 +437,22 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		a.scale = Vector3(0.56, 1.0, 0.72)
 		a.rotation = Vector3(0, 0, side * -0.20)
 		sh.add_child(a)
-		var hand := MeshInstance3D.new()
-		var hm := CylinderMesh.new()
-		hm.top_radius = 0.085
-		hm.bottom_radius = 0.085
-		hm.height = 0.12
-		hm.radial_segments = 8
-		hand.mesh = hm
-		hand.material_override = mat(skin)
+		# A minifig hand is a C-shaped clip, not a peg. The gap is small but it
+		# is the silhouette that says "this holds a thing", and a solid
+		# cylinder reads as a mitten.
+		var hand := Node3D.new()
 		hand.position = Vector3(side * 0.06, -0.42, 0.04)
 		hand.rotation = Vector3(0.6, 0, 0)
 		sh.add_child(hand)
+		for seg in range(5):
+			var ang: float = -PI * 0.72 + float(seg) * (PI * 1.44 / 4.0)
+			var piece := MeshInstance3D.new()
+			piece.mesh = brick_mesh()
+			piece.scale = Vector3(0.052, 0.105, 0.052)
+			piece.position = Vector3(sin(ang) * 0.062, 0.0, cos(ang) * 0.062)
+			piece.rotation = Vector3(0, ang, 0)
+			piece.material_override = mat(skin)
+			hand.add_child(piece)
 
 	var head := MeshInstance3D.new()
 	var hmesh := CylinderMesh.new()
@@ -307,6 +466,18 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	head.name = "Head"
 	root.add_child(head)
 	_add_face(head, 0.204)
+
+	# THE STUD ON TOP OF THE HEAD. This is the single most identifying feature
+	# a minifig has, and it was missing - which is most of why the character
+	# read as a generic blocky avatar rather than a minifig. It is hidden under
+	# most hair pieces and visible under hats and on a bare head, exactly as on
+	# the real part.
+	var hstud := MeshInstance3D.new()
+	hstud.mesh = stud_mesh()
+	hstud.material_override = mat(skin)
+	hstud.position = Vector3(0, 1.54 + 0.19 + STUD_H * 0.5, 0)
+	hstud.name = "HeadStud"
+	root.add_child(hstud)
 
 	# Hair caps the head and overlaps it - a box floating above the skull is
 	# the single most obvious tell that a model is not a minifig.
