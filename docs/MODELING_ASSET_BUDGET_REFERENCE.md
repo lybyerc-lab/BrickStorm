@@ -53,7 +53,7 @@ A section can be visually rich while gameplay simulation remains intentionally s
 
 One sampled high-intensity section is especially informative.
 
-Its gameplay-side configuration contains only about one major obstacle and a relatively small active interaction set, yet its scene payload still contains roughly 6.55 MiB of vertex data and a substantial texture payload.
+Its gameplay-side configuration contains only about one major obstacle and a relatively small active interaction set, yet its scene payload still contains roughly 6.55 MiB of vertex data, more than 100,000 rendered non-degenerate reference triangles across its draw parts, and a substantial texture payload.
 
 ### BrickStorm translation
 
@@ -125,6 +125,8 @@ Of those:
 
 That is roughly four textured material variants for each distinct texture slot.
 
+The display metadata independently contains exactly one material-pointer record for every material record in every sampled playable section, and those pointers enumerate the material table cleanly. This is a useful cross-check that the material counts are not a parser artifact.
+
 ### Clean-room lesson
 
 Visual variety can come from **material parameter variation over shared texture families**, rather than unique texture sets for every surface.
@@ -175,19 +177,125 @@ This separation is central to making Oklahoma feel populated without asking a ph
 
 ---
 
-## 6. Vertex storage favors tailored layouts
+## 6. Verified render-part descriptors
 
-The sampled scene data does not appear to force every vertex to carry every possible attribute.
+A deeper pass resolved the scene display metadata far enough to identify the actual rendered mesh-part descriptors rather than estimating geometry from a whole raw index buffer.
 
-A recurring primary rigid-world layout is structurally verified at 28 bytes per vertex:
+For every sampled rendered part, the descriptor supplies:
 
-- 12 bytes of float position;
-- two compact 4-byte attribute groups;
-- 8 bytes of float UV data.
+- primitive identity;
+- triangle-strip index count;
+- vertex stride;
+- vertex-buffer index and vertex range;
+- index-buffer index and index range.
 
-Other buffers use different record widths, indicating multiple tailored vertex layouts rather than one universal maximal format.
+Each sampled part is paired with a pointer to a 4x4 transform matrix.
 
-The exact semantics of every packed field are not required for BrickStorm and should not be copied.
+Across the six playable sections:
+
+- **4,303** rendered mesh-part descriptors were found;
+- **4,303 / 4,303** validate against their declared vertex and index buffers;
+- all sampled descriptors use the same triangle-strip primitive family;
+- the validated parts produce **661,283 non-degenerate reference triangles** after excluding strip degenerates.
+
+These are historical scene numbers, not BrickStorm targets.
+
+### Per-section render-part measurements
+
+| Section | Mesh parts | Non-degenerate triangles | Median triangles/part | P90 | P95 | Max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 919 | 126,843 | 30 | 414 | 698 | 2,697 |
+| B | 462 | 65,746 | 18 | 396 | 831 | 2,098 |
+| D | 1,320 | 171,743 | 32 | 288 | 521 | 3,076 |
+| E | 778 | 131,223 | 19.5 | 642 | 784 | 3,996 |
+| F | 498 | 102,021 | 58 | 556 | 1,080 | 2,551 |
+| G | 326 | 63,707 | 42 | 473 | 800 | 5,462 |
+
+### Aggregate part distribution
+
+Across all 4,303 parts:
+
+- median: 32 triangles;
+- 75th percentile: 120;
+- 90th percentile: 414;
+- 95th percentile: 752;
+- 99th percentile: 1,708;
+- maximum sampled part: 5,462.
+
+Distribution by threshold:
+
+- 72.1% of parts are at or below 100 triangles;
+- 83.9% are at or below 250;
+- 91.8% are at or below 500;
+- 96.9% are at or below 1,000;
+- 99.65% are at or below 2,500.
+
+Geometry is therefore strongly long-tailed. The heaviest 10% of mesh parts account for about 62.9% of sampled triangles, and the heaviest 20% account for about 80.8%.
+
+### Clean-room lesson
+
+The useful pattern is **many cheap parts plus a small number of expensive hero parts**.
+
+Do not spend hero-asset geometry everywhere. Put complexity where silhouette, camera proximity, animation, destruction, or story emphasis can actually show it.
+
+Do not interpret a mesh part as a complete prop. A single authored object may contain multiple parts/material regions, and large static world geometry may also be partitioned into multiple parts.
+
+---
+
+## 7. Geometry reuse and instancing are selective
+
+The validated draw descriptors also expose exact geometry slices. Repeated references to the same vertex/index slice indicate reuse of the same stored geometry within a section.
+
+Across the six playable sections:
+
+- 4,303 draw-part instances;
+- 3,757 unique section-local geometry slices;
+- 546 additional repeated instances, about 12.7% of draw-part instances;
+- repeated instances account for about 13% of the sampled rendered triangle work beyond drawing each unique slice once.
+
+Reuse varies dramatically by section. Some sections reuse the same geometry slice many times, with one sampled slice instanced 72 times, while two sampled sections contain no repeated geometry slices at all.
+
+### BrickStorm translation
+
+Use instancing deliberately, not dogmatically.
+
+Good candidates:
+
+- fence posts and fence modules;
+- utility poles and hardware;
+- repeated roadside props;
+- common vegetation clusters;
+- repeated LEGO debris/set-dressing families;
+- identical building trim or roof modules;
+- repeated sensor/probe support pieces.
+
+Bad candidates are objects whose uniqueness, staged destruction, damage state, interaction state, or silhouette variation would make forced instancing awkward.
+
+Godot `MultiMesh` or equivalent batching should be used where repeated static or low-state geometry actually warrants it. Hero gameplay objects remain ordinary authored scenes when that is clearer.
+
+---
+
+## 8. Vertex storage favors tailored layouts
+
+The validated draw descriptors reference multiple vertex strides rather than one universal maximal vertex format.
+
+Observed stride counts across the 4,303 sampled mesh parts:
+
+- 20 bytes: 76 parts;
+- 28 bytes: 1,198;
+- 32 bytes: 74;
+- 36 bytes: 1,899;
+- 40 bytes: 15;
+- 44 bytes: 192;
+- 48 bytes: 21;
+- 52 bytes: 5;
+- 56 bytes: 811;
+- 60 bytes: 5;
+- 64 bytes: 7.
+
+The 28, 36, and 56-byte layouts account for about 90.8% of sampled parts.
+
+A recurring 28-byte rigid-world layout is structurally verified to begin with float position and contain compact attribute data plus UV data. The exact semantics of every packed field in every layout are not required for BrickStorm and should not be copied.
 
 ### BrickStorm translation
 
@@ -203,13 +311,20 @@ Godot decides final GPU storage details, but Blender authoring and import choice
 
 ---
 
-## 7. Do not derive modern mobile triangle caps from a 2008 PC game
+## 9. Historical geometry numbers are reference distributions, not mobile caps
 
-The scene data contains explicit vertex and 16-bit index buffers, but exact draw boundaries and strip/list semantics have not yet been fully reconstructed for every level resource.
+We now have trustworthy historical draw boundaries and triangle-strip semantics for these six playable reference sections. That improves our understanding of the content architecture, but it still does **not** establish the correct performance ceiling for BrickStorm on modern Android hardware.
 
-Raw index-buffer measurements are therefore **not** reliable exact triangle counts and must not be turned into fake precision.
+Reasons include:
 
-More importantly, even perfect historical triangle counts would not establish the correct performance ceiling for BrickStorm on modern Android hardware.
+- different renderer and driver model;
+- different shader/material costs;
+- different screen resolution;
+- different CPU/GPU balance;
+- BrickStorm's tornado physics and debris load;
+- Godot's scene/draw overhead;
+- modern texture compression and memory behavior;
+- different character, vehicle, lighting, and post-processing needs.
 
 ### Correct validation path
 
@@ -223,9 +338,20 @@ More importantly, even perfect historical triangle counts would not establish th
 
 The phone benchmark sets the cap. Archaeology tells us how to organize the content so the cap is useful.
 
+### Useful temporary review bins
+
+Until the BrickStorm phone benchmark exists, the historical distribution can be used only as a **review vocabulary**, not a hard limit:
+
+- micro part: reference-class <= 100 triangles;
+- ordinary part: 101 to 500;
+- heavy part: 501 to 1,000;
+- hero/reference outlier: > 1,000.
+
+These bins help reviewers ask why a part is expensive. They are not production caps and should be replaced or reinterpreted after profiling BrickStorm itself.
+
 ---
 
-## 8. BrickStorm modeling classes
+## 10. BrickStorm modeling classes
 
 Every independently authored model should declare one primary asset class.
 
@@ -314,7 +440,7 @@ Use for minifigure characters.
 
 ---
 
-## 9. Standard authored sockets and pivots
+## 11. Standard authored sockets and pivots
 
 Models that interact with builds, tools, vehicles, destruction, carrying, or tornado forces should use predictable authored anchors instead of one-off script offsets.
 
@@ -344,7 +470,7 @@ Do not repair bad asset origins later with piles of per-instance magic offsets.
 
 ---
 
-## 10. Gameplay material identity
+## 12. Gameplay material identity
 
 Rendering material and gameplay material are related but should not be the same concept.
 
@@ -374,7 +500,7 @@ This prevents every gameplay script from reverse-engineering behavior from shade
 
 ---
 
-## 11. Build modeling contract
+## 13. Build modeling contract
 
 Buildables should be modeled as ordered meaningful components, not merely a complete model that fades in.
 
@@ -395,7 +521,7 @@ Preserve the successful storm-probe rhythm while generalizing the data model.
 
 ---
 
-## 12. Destruction modeling contract
+## 14. Destruction modeling contract
 
 Do not simulate every LEGO element continuously.
 
@@ -413,7 +539,7 @@ The tornado may promote additional authored clusters into dynamic state, but pro
 
 ---
 
-## 13. Modeling/import checklist
+## 15. Modeling/import checklist
 
 Before an asset is accepted:
 
@@ -428,18 +554,21 @@ Before an asset is accepted:
 - collision authored separately and kept simple;
 - build parts have final transforms;
 - destructibles have authored break clusters rather than implicit per-brick simulation;
+- expensive geometry has a visible reason to exist;
+- repeated static geometry is considered for instancing;
 - no proprietary reference-game geometry, textures, materials, or reconstructed assets present.
 
 ---
 
-## 14. Next empirical gate
+## 16. Next empirical gate
 
-The next useful number is **not** another historical archive metric. It is BrickStorm's own phone stress-test result.
+The next useful performance number is **BrickStorm's own phone stress-test result**.
 
 Before mass-producing Wakita, convoy vehicles, Dorothy equipment, barns, and destruction props, create a representative stress scene and establish measured tiers for:
 
 - visible triangles/vertices;
-- draw calls/material switches;
+- rendered mesh parts / draw submissions;
+- draw calls/material switches after Godot batching;
 - texture residency;
 - active rigid bodies;
 - sleeping/recycled debris;
@@ -457,7 +586,9 @@ Those measured limits become `SectionBudget` defaults and modeling-tier acceptan
 
 The clean-room reference strongly supports a BrickStorm pipeline built around:
 
+- many inexpensive render parts plus a deliberately small hero-geometry tail;
 - modular reusable world art;
+- selective geometry instancing;
 - shared texture/material families;
 - small authored metadata;
 - tailored rigid versus animated vertex needs;
