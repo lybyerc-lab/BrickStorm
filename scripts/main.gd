@@ -1686,6 +1686,42 @@ func _run_selftest() -> void:
 	if not missing.is_empty():
 		fails.append("audio assets missing or empty: %s" % ", ".join(missing))
 
+	# --- 5b. the mix rules, not just the assets --------------------------
+	# Asset existence was never the thing that made the mix sound wrong. These
+	# check the two rules that decide how it SOUNDS: what a cascade is allowed
+	# to steal, and which sounds are placed in the world at all.
+	var pv_flood: Array[int] = []
+	for i in range(8):
+		pv_flood.append(GameAudio.PRI_DEBRIS)
+	if GameAudio.pick_victim(pv_flood, 0, GameAudio.PRI_REWARD) < 0:
+		fails.append("a reward could not displace a pool full of debris")
+	var pv_busy: Array[int] = []
+	for i in range(8):
+		pv_busy.append(GameAudio.PRI_CRITICAL)
+	if GameAudio.pick_victim(pv_busy, 0, GameAudio.PRI_DEBRIS) >= 0:
+		fails.append("debris displaced a pool full of critical sounds")
+	if GameAudio.pick_victim(pv_busy, 0, GameAudio.PRI_CRITICAL) >= 0:
+		fails.append("an equal-priority sound stole a voice instead of dropping")
+
+	# Feedback about the player's own action must not go through a positional
+	# voice - that is what made pickups vary with where the stud happened to be.
+	audio.stop_all()
+	var w0 := audio.world_plays
+	var f0 := audio.flat_plays
+	audio._stud_sounded = 0.0
+	audio.stud(player.global_position)
+	audio.built(player.global_position)
+	audio.objective(player.global_position)
+	if audio.flat_plays - f0 < 3:
+		fails.append("player feedback did not take the flat pool (%d of 3)"
+			% (audio.flat_plays - f0))
+	if audio.world_plays - w0 != 0:
+		fails.append("player feedback leaked into a positional voice")
+	var w1 := audio.world_plays
+	audio.smash(player.global_position, false)
+	if audio.world_plays - w1 != 1:
+		fails.append("a world smash did not take a positional voice")
+
 	# --- 6. TT Games rules: threshold latches, tumble grants grace ---------
 	var score_before := score
 	score = TRUE_CHASER + 100

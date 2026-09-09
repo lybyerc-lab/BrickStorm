@@ -114,6 +114,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:AUDIO:BANK]` — `scripts/audio.gd` — the event vocabulary; events name what happened, not the file
 - `[BS:AUDIO:MIX]` — `scripts/audio.gd` — bus layout and the master limiter
 - `[BS:AUDIO:MIXER]` — `scripts/audio.gd` — stream cache and the fixed 3D voice pool
+- `[BS:AUDIO:FLAT]` — `scripts/audio.gd` — voice priority, and why the player's own feedback is not positional
 - `[BS:AUDIO:STUD_LADDER]` — `scripts/audio.gd` — rising pitch through a stud streak
 - `[BS:AUDIO:STORM_ROAR]` — `scripts/main.gd` — the funnel's roar as the primary risk signal
 - `[BS:AUDIO:ENGINE]` — `scripts/vehicle.gd` — engine loop pitched by road speed
