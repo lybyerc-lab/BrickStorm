@@ -320,3 +320,66 @@ consumers now validate.
 
 Measured on the commit that landed this: torn=289, ram_torn=172, smash_torn=31,
 studs=239, sensors 3/3 — unchanged from before the refactor, which is the point.
+
+---
+
+## 2026-09-09 — Bricks stop being cardboard
+
+From `Docs/TT_ENGINE_NOTES.md` section 10, the two shading facts most likely to
+change our screenshots.
+
+### Ambient is the sky, not a colour
+
+A flat ambient term lights every face of a brick identically, which is the
+flattest thing a renderer can do. TT sample a diffuse environment cube by world
+normal, so a brick's top takes the sky and its underside takes the ground.
+Godot gives us the same thing for the price of three lines:
+`AMBIENT_SOURCE_SKY`, full sky contribution, and `REFLECTION_SOURCE_SKY`.
+Energy is the single global dimmer TT drive with `sceneAmbientColor.a`.
+
+### Rim is the fresnel term, and it is what makes plastic plastic
+
+TT scale specular by an explicit fresnel factor. A dielectric throws back far
+more light at grazing angles than head-on, and without that a brick reads as a
+flat-shaded box however the lights are placed. Godot's `rim` is that term.
+It is **bricks only** — a grazing-angle response on a 420m ground plane is the
+horizon, which is the same lesson as the specular blowout recorded above.
+
+### The bug this uncovered, which was the real problem
+
+The first pass changed `BrickLib.mat()` and the screenshots came back "slightly
+brighter". `Structure`'s MultiMesh batch material — which is what **every**
+building, fence, tree and vehicle in the game actually draws through — carried
+its own hand-copied roughness and specular, and never got the fresnel term. Two
+definitions of what plastic looks like, and the change landed on the one that
+covers the minifig and loose debris.
+
+There is now one definition, `BrickLib.apply_plastic()`, and a check that fails
+if the two drift apart again.
+
+### Captures are seeded
+
+Judging any of this was impossible at first because `randomize()` gave a
+different world every run: the first "after" shot had a barn in it that the
+"before" shot did not, and the measured difference was mostly the barn.
+`--capture` now seeds, so two shots from different commits are of the same
+world. Screenshots are evidence (`Docs/NO_DRIFT_POLICY.md`) and evidence has to
+be comparable.
+
+### Measured, on identical seeds
+
+| | before | after |
+|---|---|---|
+| shadow fill (darkest decile) | 34.7–45.5 | 27.9–36.9 |
+| clipped white | 0.12–1.08% | 0.11–1.11% |
+
+Shadows did not simply get brighter — contrast rose. Faces separate from each
+other, the fence rail has a lit top edge instead of being a white slab, and the
+studs catch a highlight. Clipping did not increase, which was the risk.
+
+### Not done
+
+TT also scale specular by a LOD factor so distant geometry loses its highlight
+entirely — cheaper, and it kills shimmer. Godot's `StandardMaterial3D` has no
+per-distance specular, and a custom shader for MultiMesh-batched bricks is a
+larger change than this one. Recorded as absent rather than quietly skipped.

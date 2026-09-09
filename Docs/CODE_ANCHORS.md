@@ -138,6 +138,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 ### World
 
+- `[BS:RENDER:PLASTIC]` — `scripts/brick_lib.gd` — the one definition of what plastic looks like, and why the fresnel term is bricks-only
 - `[BS:WORLD:ENVIRONMENT]` — `scripts/main.gd` — sky, light, fog
 - `[BS:WORLD:GROUND]` — `scripts/main.gd` — ground plane and crop squares
 - `[BS:WORLD:AREA_STATE]` — `scripts/main.gd` — the sub-area's intensity state, and the ambience bed that follows it

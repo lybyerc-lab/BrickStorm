@@ -51,6 +51,10 @@ var _stream_t: float = 0.0
 const AREA_DEPTH := 34.0
 # The hand-placed opening pocket, wide enough to own every prop _build_town
 # places - including the furniture ring, which reaches 34m from its centre.
+# Any value; it only has to never change, so shots from different commits are
+# of the same world.
+const CAPTURE_SEED := 20260909
+
 const START_Z0 := -60.0
 const START_DEPTH := 92.0
 
@@ -100,9 +104,18 @@ var _elapsed: float = 0.0
 
 
 func _ready() -> void:
-	randomize()
 	var args := OS.get_cmdline_args()
 	args.append_array(OS.get_cmdline_user_args())
+	# CAPTURES ARE EVIDENCE, SO THEY MUST BE COMPARABLE. With randomize() the
+	# world differs every run and two screenshots cannot be held against each
+	# other - which is exactly what happened trying to judge a lighting change:
+	# the "after" shot had a barn in it that the "before" shot did not, and the
+	# measured difference was mostly the barn. A fixed seed makes a capture a
+	# controlled comparison instead of an anecdote.
+	if args.has("--capture"):
+		seed(CAPTURE_SEED)
+	else:
+		randomize()
 	capture_mode = args.has("--capture")
 	playthrough = args.has("--playthrough")
 	probe_mode = args.has("--probe")
@@ -145,12 +158,23 @@ func _setup_environment() -> void:
 	sm.sun_angle_max = 40.0
 	sky.sky_material = sm
 	env.sky = sky
+	# THE AMBIENT IS THE SKY, NOT A COLOUR. A flat ambient term lights every
+	# face of a brick identically, which is the single flattest thing a
+	# renderer can do and is much of why our bricks read as cardboard. Sampling
+	# the sky means a brick's top takes the storm above it and its underside
+	# takes the ground it stands on - TT do this with a diffuse environment
+	# cube, see Docs/TT_ENGINE_NOTES.md section 10.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 1.5
+	env.ambient_light_sky_contribution = 1.0
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	# Energy is the one global dimmer over every ambient-lit surface, which is
+	# what TT drive with sceneAmbientColor.a when a level goes indoors.
+	env.ambient_light_energy = 2.6
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.66, 0.65, 0.46)
 	env.fog_density = 0.0009
 	we.environment = env
+	we.add_to_group("worldenv")
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
@@ -1793,6 +1817,32 @@ func _run_selftest() -> void:
 			missing.append("loop/%s (stream empty)" % k)
 	if not missing.is_empty():
 		fails.append("audio assets missing or empty: %s" % ", ".join(missing))
+
+	# --- 4c. one definition of plastic, and ambient from the sky ----------
+	# Structure's MultiMesh batch material is what every building in the game
+	# actually draws through; BrickLib.mat() covers the minifig and loose
+	# debris. They used to hand-copy the same numbers, so adding a fresnel term
+	# to one changed the minifig and left every building untouched - and the
+	# screenshots looked "a bit brighter" instead of different. This asserts
+	# they cannot drift apart again.
+	var ref_mat := BrickLib.mat(BrickLib.C_RED)
+	var batch := Structure._material()
+	for prop in ["roughness", "metallic", "metallic_specular", "rim_enabled",
+			"rim", "rim_tint"]:
+		if batch.get(prop) != ref_mat.get(prop):
+			fails.append("plastic drifted: batch %s=%s but BrickLib %s=%s"
+				% [prop, batch.get(prop), prop, ref_mat.get(prop)])
+	if not ref_mat.rim_enabled:
+		fails.append("bricks have no fresnel term - they will read as cardboard")
+	if BrickLib.terrain_mat(BrickLib.C_GREEN).rim_enabled:
+		fails.append("the ground has a grazing-angle response - it is not plastic")
+
+	var envr := get_viewport().find_world_3d().environment
+	if envr == null:
+		var wenv := get_tree().get_first_node_in_group("worldenv")
+		envr = (wenv as WorldEnvironment).environment if wenv != null else null
+	if envr != null and envr.ambient_light_source != Environment.AMBIENT_SOURCE_SKY:
+		fails.append("ambient is a flat colour, not the sky - every face lights the same")
 
 	# --- 5a. the sub-area is one unit, shared -----------------------------
 	# Streaming, camera framing and the ambience bed now key off the same

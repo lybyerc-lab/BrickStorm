@@ -40,13 +40,15 @@ static func _unit_box() -> BoxMesh:
 	return _box_mesh
 
 
+# Every building, fence, tree and vehicle in the world draws through THIS
+# material, not BrickLib.mat() - so any change to how plastic looks has to
+# land here or it does not land at all. It used to hand-copy BrickLib's
+# numbers, and they silently drifted apart.
 static func _material() -> StandardMaterial3D:
 	if _batch_mat == null:
 		_batch_mat = StandardMaterial3D.new()
 		_batch_mat.vertex_color_use_as_albedo = true
-		_batch_mat.roughness = 0.36
-		_batch_mat.metallic = 0.0
-		_batch_mat.metallic_specular = 0.48
+		BrickLib.apply_plastic(_batch_mat)
 	return _batch_mat
 
 

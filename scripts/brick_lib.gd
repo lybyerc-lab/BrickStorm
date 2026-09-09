@@ -42,21 +42,54 @@ const C_TRANS  := Color(0.55, 0.78, 0.88)
 static var _mats: Dictionary = {}
 static var _stud_mesh: CylinderMesh = null
 
+# ============================================================================
+# [BS:RENDER:PLASTIC]
+# Purpose: The one material every brick in the game uses. It is ABS plastic.
+# Invariants:
+# - RIM IS THE FRESNEL TERM, and it is the difference between plastic and
+#   painted cardboard. A dielectric throws back far more light at grazing
+#   angles than head-on; without it a brick reads as a flat-shaded box no
+#   matter how the lights are placed. TT scale their specular by an explicit
+#   fresnel factor for exactly this reason - see Docs/TT_ENGINE_NOTES.md 10.
+# - It belongs to BRICKS ONLY. The ground is not plastic; giving a 420m plane
+#   a grazing-angle response lights the whole horizon. See terrain_mat, and the
+#   specular blowout recorded in Docs/DECISION_LOG.md.
+# - rim_tint stays near the middle. At 0 the rim takes the light's colour and
+#   every brick gets a white edge; at 1 it takes the albedo and vanishes on
+#   dark bricks. The point is a lit EDGE that is still recognisably the
+#   brick's own colour.
+# - Roughness is low enough to hold a highlight and high enough that the
+#   highlight is a soft patch rather than a mirrored dot. Plastic, not chrome.
+# ============================================================================
+# The ONE definition of what plastic looks like. Structure's MultiMesh batch
+# material cannot call mat() - it needs vertex colours, not an albedo - so it
+# calls this instead. Before this existed the two hand-copied the same four
+# numbers, which meant giving bricks a fresnel term changed the minifig and
+# the loose debris and left every building in the game untouched.
+static func apply_plastic(m: StandardMaterial3D) -> void:
+	m.roughness = 0.30
+	m.metallic = 0.0
+	m.metallic_specular = 0.62
+	m.rim_enabled = true
+	m.rim = 0.55
+	m.rim_tint = 0.45
+
+
 static func mat(c: Color) -> StandardMaterial3D:
 	var key: int = c.to_rgba32()
 	if _mats.has(key):
 		return _mats[key]
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
-	m.roughness = 0.36
-	m.metallic = 0.0
-	m.metallic_specular = 0.48
+	apply_plastic(m)
 	_mats[key] = m
 	return m
+# [BS:RENDER:PLASTIC:END]
 
 # Ground and fields are NOT plastic. Sharing the glossy brick material with a
 # 420m plane turns the whole floor into a mirror and puts a specular sun the
-# size of a building in the middle of the frame.
+# size of a building in the middle of the frame. No rim here either: a
+# grazing-angle response on a plane that reaches the horizon IS the horizon.
 static func terrain_mat(c: Color) -> StandardMaterial3D:
 	var key: int = c.to_rgba32() ^ 0x5f5f5f5f
 	if _mats.has(key):
