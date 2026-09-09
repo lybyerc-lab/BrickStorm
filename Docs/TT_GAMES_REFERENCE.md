@@ -185,6 +185,53 @@ Both are implemented; see `Docs/DECISION_LOG.md`.
 
 ---
 
+## § Observed
+
+From watching the demo run here on 2026-09-09. **Read the limits first.**
+
+What was seen clearly: the attract loop, the Raiders idol chamber, a whip-swing
+traversal over a river, and a Cairo street fight. What was *not* seen reliably:
+extended hands-on play with the HUD up. Under software rendering the in-game
+world frequently renders as shattered polygons - a wined3d/llvmpipe problem,
+not a fact about the game - while cinematics render correctly. So the notes
+below are about **staging, density and composition**, which survive that, and
+not about frame-by-frame game feel, which does not. Nothing here is a
+measurement of the shipped game's tuning; a stopwatch on real hardware still
+beats all of it.
+
+- **[observed] Studs are authored geometry, not scatter.** In the idol chamber
+  the pickups sit in an even semicircular arc across the floor, gold and silver
+  alternating, describing the shape of the room and pointing at the pedestal.
+  They are level design that happens to be currency. BRICKSTORM currently
+  *scatters* studs from destruction, which is the opposite: our studs are an
+  output of the simulation, theirs are an input to the composition. Both should
+  exist. Only one of them does here.
+- **[observed] The prop density is far past what feels reasonable.** One screen
+  of the U-boat pen holds a submarine, a torpedo cart, a run of seven safety
+  railings, three ladders, two hanging lamps, two wall panels, crates, floor
+  markings, dock plating and a lit brazier - and a control room visible through
+  a window with figures in it. Almost none of it is required by the level. This
+  is the single biggest visible gap against our own playtest note that the map
+  is bare by t=90s. Density is what makes smashing feel inexhaustible.
+- **[observed] The camera sits low and well back.** The character occupies
+  roughly a fifth of frame height and sits below the centre line, with
+  substantial headroom above. It is neither over-the-shoulder nor a high orbit.
+  The scene, not the character, is the subject of the shot.
+- **[observed] Cinematics are letterboxed inside the play frame.** The mode
+  switch is announced by two black bars rather than by a camera change. It costs
+  nothing and it is unmistakable.
+- **[observed] The ground is never clean.** Loose parts lie about in the play
+  space. Whether authored or the residue of a smash, the read is the same: the
+  floor carries evidence.
+- **[observed] Sound is authored, not left at unity.** The shipped audio config
+  is plain text and documents its own schema. 1,421 sample entries; 1,337 carry
+  pitch randomisation (median +/-10%); 793 carry volume randomisation that is
+  *always negative*; 156 carry an explicit priority for voice stealing; 221 are
+  marked non-positional. Acted on already - see the commit that added voice
+  priority and the flat pool.
+
+---
+
 ## Running the demo
 
 Recorded because it took several wrong turns to get right, and because the
