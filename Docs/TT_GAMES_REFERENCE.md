@@ -223,6 +223,12 @@ beats all of it.
 - **[observed] The ground is never clean.** Loose parts lie about in the play
   space. Whether authored or the residue of a smash, the read is the same: the
   floor carries evidence.
+- **[observed] The demo ships two plain-text config files and leaves source
+  paths, the full character roster and the engine's own verb vocabulary in the
+  binary.** That turned out to be the richest seam by a distance - build-spot
+  counts, the music state machine, the camera tuning parameters and the ability
+  system all came out of it. It has its own document:
+  **`Docs/TT_ENGINE_NOTES.md`**.
 - **[observed] Sound is authored, not left at unity.** The shipped audio config
   is plain text and documents its own schema. 1,421 sample entries; 1,337 carry
   pitch randomisation (median +/-10%); 793 carry volume randomisation that is
