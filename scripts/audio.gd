@@ -278,7 +278,7 @@ func play_flat(event: String, volume_db: float = 0.0, pitch: float = 1.0,
 
 # A looping voice owned by another node - the funnel, a truck.
 func attach_loop(name: String, to: Node3D, volume_db: float = -80.0) -> AudioStreamPlayer3D:
-	if not LOOPS.has(name):
+	if to == null or not LOOPS.has(name):
 		return null
 	var s := stream_for(LOOPS[name], true)
 	if s == null:

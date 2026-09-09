@@ -237,3 +237,86 @@ of event that gets quietly deleted from history.
 
 Measured on the commit that landed this: drove 13.6m, ram tore 128 bricks,
 player smash tore 30, funnel tore 262, 2,308 studs banked.
+
+---
+
+## 2026-09-09 — The sub-area becomes the unit
+
+Supersedes the arrangement in which the streamer, the set piece, the camera and
+the audio each answered "where does one part of the world end?" separately, or
+not at all.
+
+### Why
+
+`Docs/TT_ENGINE_NOTES.md` section 8: a TT level divides into lettered
+sub-areas, and camera files, music zones and level data all key off **that same
+division**. Before this change BRICKSTORM had three answers and two absences:
+
+- the streamer had a bare float frontier, `_stream_z`, advancing by `BLOCK_DEPTH`
+- the set piece had `_is_reserved()`, open-coded arithmetic against a magic Z
+  with its own `-10.0` and `+28.0` margins that matched nothing else
+- the camera had no spatial awareness at all
+- the ambience bed did not exist; `wind` and `rumble` sat unused in the bank
+
+### What was built
+
+`SubArea` (`scripts/sub_area.gd`) — one named division: bounds, kind
+(PROCEDURAL or AUTHORED), the structures it owns, framing hints, and an
+intensity state.
+
+`AreaMap` (`scripts/area_map.gd`) — the single authority on the division.
+Owns the frontier, creates areas, hands only PROCEDURAL ones to the populator,
+retires whole areas behind the storm, and answers `area_at` / `framing_at`.
+
+Then all three systems were moved onto it:
+
+- **Streaming.** `_stream_z`, `_block_seed` and `_is_reserved` are gone.
+  `_spawn_block(z)` became `_populate_area(area)`. Reclaim retires areas rather
+  than testing every structure every pass.
+- **Camera.** Framing hints come from the area, faded in over its range of
+  effect — TT's `CamRangeOfEffect`. Procedural areas carry no hint, so the
+  automatic camera is untouched over the great majority of the corridor. The
+  authored yard pulls back 5m and lifts 2.6m so its composition reads.
+  Automatic by default, authored where it matters.
+- **Audio.** The area carries an intensity — AMBIENT, QUIET, ACTION, TT's three
+  states — and the ambience bed follows it, ducking when the storm arrives so
+  it never competes with the roar.
+
+The starting town is now a `START` sub-area rather than the one stretch of
+world that nothing owned.
+
+### What is NOT built, and is not pretended to be
+
+TT quantise music transitions to authored markers in the track (`IX` points), so
+a fight ending never cuts the music mid-phrase. We have no composed music, so
+the ambience bed uses a rate-limited fade instead. That is a stand-in, and it is
+recorded here as one rather than described as the same thing.
+
+### Verification
+
+Six new assertions, each verified to fail by breaking the rule it guards:
+
+- tiling has no gap or overlap — broken by advancing the frontier past `z1()`
+- authored ground is never populated — broken by passing authored areas to the
+  populator inside `ensure_ahead`
+- the authored area applies a framing hint, and it does not leak far outside
+- a structure thrown ahead outlives its birth area, and one left behind does not
+- the ambience bed ducks rather than swells
+- **the corridor is never bare**
+
+The last one exists because of a mistake made writing these. The first version
+of the re-homing check drove `retire_behind` on the LIVE map, which retired the
+starting area and deleted the town. `torn` fell from 290 to 70 and the run still
+reported **SELFTEST OK**, because nothing asserted that the world stays
+populated. The check was rewritten to run on a throwaway map, and a density
+floor was added — the streamer's entire promise is that you are never more than
+a couple of paces from something that breaks, and until now nothing checked it.
+
+A second bug surfaced the same way: the near cache is rebuilt on a timer, so it
+can outlive a structure freed since the last refresh. It had never fired because
+the only source of freeing was reclaim 95m behind the storm, far outside the
+cache. Freeing one next to the player found it immediately. All three cache
+consumers now validate.
+
+Measured on the commit that landed this: torn=289, ram_torn=172, smash_torn=31,
+studs=239, sensors 3/3 — unchanged from before the refactor, which is the point.

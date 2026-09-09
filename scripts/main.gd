@@ -37,7 +37,6 @@ var _cow_air: Dictionary = {}
 var _force_input: bool = false
 var _forced_input := Vector2.ZERO
 var _cam_dir := Vector3(0, 0, 1)
-var _stream_z: float = 0.0
 var _near: Array[Structure] = []
 var _near_t: float = 0.0
 var _near_from := Vector3(1e9, 1e9, 1e9)
@@ -49,8 +48,19 @@ var sensors_found: int = 0
 const SENSOR_BONUS := 25000
 const SET_PIECE_Z := 120.0
 var _stream_t: float = 0.0
-var _block_seed: int = 0
-const BLOCK_DEPTH := 34.0
+const AREA_DEPTH := 34.0
+# The hand-placed opening pocket, wide enough to own every prop _build_town
+# places - including the furniture ring, which reaches 34m from its centre.
+const START_Z0 := -60.0
+const START_DEPTH := 92.0
+
+# The corridor's division into sub-areas. Streaming, camera framing and the
+# ambience bed all key off this one map. See Docs/TT_ENGINE_NOTES.md section 8.
+var areamap := AreaMap.new()
+var _sp_area: SubArea = null
+var _area_now: SubArea = null
+var _authored_populated: int = 0
+var _amb: AudioStreamPlayer3D = null
 const STREAM_AHEAD := 190.0
 const STREAM_BEHIND := 95.0
 const CORRIDOR_HALF_WIDTH := 46.0
@@ -215,6 +225,7 @@ func _add_vehicle(pos: Vector3, colour: Color, yaw: float) -> void:
 func _add_structure(st: Structure) -> void:
 	add_child(st)
 	structures.append(st)
+	areamap.adopt(st)
 
 
 # ============================================================================
@@ -227,8 +238,15 @@ func _add_structure(st: Structure) -> void:
 #   contrast (screenshot checklist).
 # ============================================================================
 func _build_town() -> void:
-	# A starting pocket around the player. Everything beyond this arrives from
-	# BS:WORLD:STREAM as the storm advances.
+	# The starting pocket is a sub-area like everything else, so its structures
+	# are owned and retire on the same schedule as streamed ones. Before this it
+	# was the one stretch of world that nothing owned.
+	areamap.depth = AREA_DEPTH
+	areamap.frontier = START_Z0
+	areamap.reserve(START_Z0, START_DEPTH, "START")
+	areamap.ensure_ahead(START_Z0 + START_DEPTH, _populate_area)
+
+	# Everything beyond this arrives from BS:WORLD:STREAM as the storm advances.
 	_add_structure(PropBuilder.barn(Vector3(16, 0, -18)))
 	_add_structure(PropBuilder.farmhouse(Vector3(-20, 0, -12)))
 	_add_structure(PropBuilder.silo(Vector3(25, 0, -14)))
@@ -244,7 +262,6 @@ func _build_town() -> void:
 		var a := TAU * float(k) / 16.0
 		var r := 12.0 + fmod(float(k) * 7.3, 22.0)
 		_add_structure(PropBuilder.furniture(k * 3, Vector3(cos(a) * r, 0, sin(a) * r - 6.0), a))
-	_stream_z = 20.0
 
 	_build_cows()
 
@@ -273,29 +290,26 @@ func _stream_world(delta: float) -> void:
 	if _stream_t > 0.0:
 		return
 	_stream_t = 0.4
-	var front := tornado.funnel_pos().z + STREAM_AHEAD
-	while _stream_z < front:
-		# Authored ground is reserved. Scattering random props through a
-		# hand-composed set piece destroys the composition, which is the one
-		# thing the set piece exists to demonstrate.
-		if not _is_reserved(_stream_z):
-			_spawn_block(_stream_z)
-		_stream_z += BLOCK_DEPTH
 
+	# The map decides where one area ends and the next begins, and it never
+	# hands an AUTHORED area to the populator. That reservation used to be
+	# open-coded arithmetic here against a magic Z.
+	var front := tornado.funnel_pos().z + STREAM_AHEAD
+	areamap.ensure_ahead(front, _populate_area)
+
+	# Retire whole areas rather than testing every structure every pass. The
+	# map re-homes anything the funnel has thrown ahead of the cutoff.
 	var cutoff := tornado.funnel_pos().z - STREAM_BEHIND
+	for st in areamap.retire_behind(cutoff):
+		st.queue_free()
+	areamap.compact()
+
 	var i := structures.size() - 1
 	while i >= 0:
-		var st := structures[i]
-		if not is_instance_valid(st):
-			structures.remove_at(i)
-		elif st.global_position.z < cutoff:
-			st.queue_free()
+		var st2 := structures[i]
+		if not is_instance_valid(st2) or st2.is_queued_for_deletion():
 			structures.remove_at(i)
 		i -= 1
-
-
-func _is_reserved(z0: float) -> bool:
-	return z0 + BLOCK_DEPTH > SET_PIECE_Z - 10.0 and z0 < SET_PIECE_Z + 28.0
 
 
 func _rng(n: int) -> float:
@@ -304,15 +318,23 @@ func _rng(n: int) -> float:
 	return absf(x)
 
 
-func _spawn_block(z0: float) -> void:
-	_block_seed += 1
-	var b := _block_seed
+# Fill one procedural sub-area. The area, not a loose float, is the unit.
+func _populate_area(area: SubArea) -> void:
+	# The reservation rule, made observable. If this ever increments, hand-
+	# composed ground is being scattered with random props, which is the one
+	# thing a set piece exists not to be.
+	if area.kind == SubArea.Kind.AUTHORED:
+		_authored_populated += 1
+		return
+	var z0 := area.z0
+	var span := area.depth
+	var b := area.index + 1
 	var w := CORRIDOR_HALF_WIDTH
 
 	# One landmark per block, alternating, so there is always something big
 	# arriving ahead of the storm.
 	var lx: float = lerpf(-w * 0.7, w * 0.7, _rng(b * 7))
-	var lz: float = z0 + _rng(b * 11) * BLOCK_DEPTH
+	var lz: float = z0 + _rng(b * 11) * span
 	match b % 6:
 		0: _add_structure(PropBuilder.barn(Vector3(lx, 0, lz)))
 		1: _add_structure(PropBuilder.farmhouse(Vector3(lx, 0, lz)))
@@ -326,24 +348,24 @@ func _spawn_block(z0: float) -> void:
 	# trees and fences give the corridor edges
 	for k in range(3):
 		var tx: float = lerpf(-w, w, _rng(b * 31 + k * 17))
-		_add_structure(PropBuilder.tree(Vector3(tx, 0, z0 + _rng(b + k * 5) * BLOCK_DEPTH),
+		_add_structure(PropBuilder.tree(Vector3(tx, 0, z0 + _rng(b + k * 5) * span),
 			0.85 + _rng(b * 3 + k) * 0.5))
 	if b % 2 == 0:
 		var fx: float = lerpf(-w * 0.8, w * 0.8, _rng(b * 41))
 		_add_structure(PropBuilder.fence_run(
-			Vector3(fx, 0, z0 + 2.0), Vector3(fx, 0, z0 + BLOCK_DEPTH - 2.0)))
+			Vector3(fx, 0, z0 + 2.0), Vector3(fx, 0, z0 + span - 2.0)))
 
 	# the dense furniture layer - this is what removes dead time
 	for k in range(11):
 		var fx2: float = lerpf(-w, w, _rng(b * 97 + k * 23))
-		var fz: float = z0 + _rng(b * 53 + k * 13) * BLOCK_DEPTH
+		var fz: float = z0 + _rng(b * 53 + k * 13) * span
 		var yaw: float = _rng(b * 61 + k) * TAU
 		_add_structure(PropBuilder.furniture(b * 7 + k, Vector3(fx2, 0, fz), yaw))
 
 	# an occasional parked truck to ram
 	if b % 3 == 1:
 		var px: float = lerpf(-w * 0.6, w * 0.6, _rng(b * 71))
-		_add_structure(PropBuilder.pickup(Vector3(px, 0, z0 + BLOCK_DEPTH * 0.5),
+		_add_structure(PropBuilder.pickup(Vector3(px, 0, z0 + span * 0.5),
 			[BrickLib.C_BLUE, BrickLib.C_YELLOW, BrickLib.C_WHITE][b % 3], _rng(b * 13) * TAU))
 # [BS:WORLD:STREAM:END]
 # ============================================================================
@@ -418,6 +440,19 @@ func _build_cows() -> void:
 #   after learning to move, and is not culled behind the storm before arrival.
 # ============================================================================
 func _spawn_set_piece(origin: Vector3) -> void:
+	# Reserve the ground FIRST. An AUTHORED area is never handed to the
+	# populator, which is the whole of the rule that used to be open-coded
+	# arithmetic in the streamer against a magic Z.
+	_sp_area = areamap.reserve(origin.z - 10.0, 42.0, "HOG_LOT")
+	# The one place in the game with a hand-authored camera. The yard is a
+	# composition and it only reads from further back and a little higher; the
+	# automatic camera frames a minifig, which is right everywhere else.
+	# Procedural areas leave these at zero - automatic by default, authored
+	# where it matters, which is how the LEGO games do it.
+	_sp_area.cam_back_bias = 5.0
+	_sp_area.cam_height_bias = 2.6
+	_sp_area.cam_range = 22.0
+
 	_sp = SetPiece.hog_lot(origin)
 	for st in _sp["structures"]:
 		_add_structure(st)
@@ -514,6 +549,13 @@ func _spawn_actors() -> void:
 	add_child(player)
 	player.global_position = Vector3(-4, 0.2, 0)
 	player.tumbled.connect(_on_player_tumbled)
+
+	# The ambience bed rides with the player and is driven by the sub-area's
+	# state - see BS:WORLD:AREA_STATE. "wind" sat unused in the bank until the
+	# sub-area gave it something to key off.
+	_amb = audio.attach_loop("wind", player, -60.0)
+	if _amb != null:
+		_amb.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
 
 	camera = Camera3D.new()
 	camera.fov = 58.0
@@ -615,6 +657,7 @@ func _process(delta: float) -> void:
 	if playthrough:
 		_tick_playthrough(delta)
 	_update_storm_audio()
+	_update_area_state(delta)
 	hud.set_bracing(player.braced)
 	if demo_mode:
 		_demo_smash(delta)
@@ -685,6 +728,10 @@ func _read_input() -> void:
 # - The camera orbits to sit OPPOSITE the funnel, so the framing is always
 #   player-foreground / storm-beyond and the funnel can never come between the
 #   lens and the player. Yaw follows the storm slowly; pitch is fixed.
+# - Framing hints come from the sub-area the player is in, faded in over that
+#   area's range of effect so the change reads as direction rather than as a
+#   snap. Procedural areas carry no hint, so the automatic camera is untouched
+#   over the great majority of the corridor - authored only where it matters.
 # - It is additionally kept FUNNEL_CLEARANCE metres clear of the funnel axis.
 #   The cone flares near the top, and a camera that drifts over it films the
 #   inside of the tornado. This has already been a bug once.
@@ -707,8 +754,11 @@ func _update_camera(delta: float) -> void:
 	var d: float = clampf(p.distance_to(t), 14.0, 60.0)
 	# Close and low. A LEGO game frames the MINIFIG; a distant top-down camera
 	# turns the star of the show into a speck and reads as a strategy game.
-	var back: float = 9.5 + d * 0.12
-	var height: float = 5.4 + d * 0.10
+	# Per-area framing. Zero everywhere except the areas that ship a hint, so
+	# the automatic camera is unchanged over procedural ground.
+	var bias := areamap.framing_at(p.z)
+	var back: float = 9.5 + d * 0.12 + bias.x
+	var height: float = 5.4 + d * 0.10 + bias.y
 	var desired := p + _cam_dir * back + Vector3(0, height, 0)
 
 	# Backstop: never inside the cone, which flares near the top.
@@ -742,6 +792,10 @@ func _update_camera(delta: float) -> void:
 # - Refreshed on a timer, not per frame. A quarter second of staleness is
 #   invisible at walking pace and is the entire point of the cache.
 # - Anything iterating `structures` directly in a per-frame path is a bug.
+# - Consumers must validate each entry. The cache is rebuilt on a timer, so it
+#   can outlive a structure freed since the last refresh. This never fired
+#   while the only source of freeing was reclaim 95m behind the storm; a test
+#   that freed one next to the player found it immediately.
 # - The refresh is also distance-triggered, not purely on a timer: a teleport
 #   or a fast truck outruns a 0.25s timer and a stale list makes SMASH hit
 #   nothing at all.
@@ -771,7 +825,7 @@ func _nearest_structure(within: float) -> Structure:
 	var best: Structure = null
 	var bd := within
 	for s in _near:
-		if s.is_rubble():
+		if not is_instance_valid(s) or s.is_rubble():
 			continue
 		var d := s.global_position.distance_to(player.global_position)
 		if d < bd:
@@ -875,7 +929,7 @@ func _do_smash() -> void:
 	for st in _near:
 		if hit >= 10:
 			break
-		if st.is_rubble():
+		if not is_instance_valid(st) or st.is_rubble():
 			continue
 		if st.global_position.distance_to(p) > reach + 12.0:
 			continue
@@ -1033,6 +1087,12 @@ func _tear_with_funnel() -> void:
 	for s in _near:
 		if budget <= 0:
 			break
+		# The cache is rebuilt on a timer, so it can outlive a structure freed
+		# since the last refresh - reclaim, a set piece teardown, anything.
+		# Cheap here because the cache is short; the invariant that bans
+		# walking every structure is unaffected.
+		if not is_instance_valid(s):
+			continue
 		if s.torn_count >= s.entries.size():
 			continue
 		if s.global_position.distance_to(c) > tornado.damage_radius + 26.0:
@@ -1149,6 +1209,54 @@ func _update_storm_audio() -> void:
 	_roar.volume_db = lerpf(-44.0, -13.0, near)
 	_roar.pitch_scale = 0.70 + near * 0.26
 # [BS:AUDIO:STORM_ROAR:END]
+
+
+# ============================================================================
+# [BS:WORLD:AREA_STATE]
+# Purpose: The sub-area the player is in has a state, and the ambience follows.
+# Invariants:
+# - The state lives on the SUB-AREA, not on the player and not on the storm.
+#   That is the point of the refactor: streaming, camera framing and the
+#   ambience bed all read the same division of the world.
+# - Three states, in TT's order of escalation: AMBIENT (nobody here), QUIET
+#   (the player is here, the storm is not), ACTION (the storm is in this area).
+# - The bed DUCKS in ACTION rather than swelling. The roar is the risk signal
+#   and it must not compete with a wind bed; see BS:AUDIO:STORM_ROAR.
+# - Transitions are RATE-LIMITED, not instant. TT quantise theirs to authored
+#   musical markers, which we cannot do without composed music - a slow fade is
+#   the honest stand-in, and the difference is recorded rather than papered
+#   over. See Docs/TT_ENGINE_NOTES.md section 6.
+# ============================================================================
+const AMB_DB := {
+	SubArea.Intensity.AMBIENT: -20.0,
+	SubArea.Intensity.QUIET: -16.0,
+	SubArea.Intensity.ACTION: -34.0,
+}
+
+
+func _update_area_state(delta: float) -> void:
+	var pz := player.global_position.z
+	var fz := tornado.funnel_pos().z
+	var here := areamap.area_at(pz)
+	if here == null:
+		here = areamap.nearest(pz)
+	if here == null:
+		return
+
+	# The storm is "in" an area when the funnel is inside its z-range. The
+	# margin is deliberately generous: an area the storm is about to enter
+	# should already sound like it.
+	if fz >= here.z0 - 12.0 and fz < here.z1() + 12.0:
+		here.intensity = SubArea.Intensity.ACTION
+	else:
+		here.intensity = SubArea.Intensity.QUIET
+	_area_now = here
+
+	if _amb == null:
+		return
+	var want: float = AMB_DB[here.intensity]
+	_amb.volume_db = move_toward(_amb.volume_db, want, delta * 9.0)
+# [BS:WORLD:AREA_STATE:END]
 
 
 # ============================================================================
@@ -1685,6 +1793,77 @@ func _run_selftest() -> void:
 			missing.append("loop/%s (stream empty)" % k)
 	if not missing.is_empty():
 		fails.append("audio assets missing or empty: %s" % ", ".join(missing))
+
+	# --- 5a. the sub-area is one unit, shared -----------------------------
+	# Streaming, camera framing and the ambience bed now key off the same
+	# division of the world. These check that the division is sound and that
+	# each of the three actually reads it.
+	if not areamap.is_contiguous():
+		fails.append("sub-areas do not tile the corridor (gap or overlap)")
+	if areamap.areas.size() < 3:
+		fails.append("corridor has only %d sub-areas" % areamap.areas.size())
+	if _authored_populated != 0:
+		fails.append("authored ground was procedurally populated %d times"
+			% _authored_populated)
+	if _sp_area == null or _sp_area.kind != SubArea.Kind.AUTHORED:
+		fails.append("the set piece did not reserve an authored sub-area")
+
+	# Camera: the hint applies inside the authored area and nowhere else.
+	var f_in := areamap.framing_at(SET_PIECE_Z)
+	var f_out := areamap.framing_at(SET_PIECE_Z + 400.0)
+	if f_in.x <= 0.0 or f_in.y <= 0.0:
+		fails.append("authored area applies no camera framing hint")
+	if f_out.x != 0.0 or f_out.y != 0.0:
+		fails.append("a framing hint leaked far outside its area")
+
+	# Ownership is total, and a thrown structure outlives its birth area.
+	var owned := 0
+	for a in areamap.areas:
+		owned += a.structures.size()
+	if owned <= 0:
+		fails.append("no structure is owned by any sub-area")
+
+	# DENSITY IS THE PROMISE. The streamer exists so the corridor is never
+	# bare - "in a LEGO game you are never more than a couple of paces from
+	# something that breaks". Nothing asserted this until a broken test quietly
+	# deleted the town and the run still reported OK, with `torn` down from 290
+	# to 70. A count is the cheapest possible guard on the whole system.
+	var live := 0
+	for st4 in structures:
+		if is_instance_valid(st4) and not st4.is_queued_for_deletion():
+			live += 1
+	if live < 60:
+		fails.append("corridor holds only %d live structures - the world is bare" % live)
+	# Re-homing is tested on a THROWAWAY map. Driving it on the live one
+	# retires the starting area and deletes the town, which is exactly what the
+	# first version of this check did - it dropped `torn` from 290 to 70 and
+	# still reported OK, because nothing asserted on the town surviving.
+	var probe_map := AreaMap.new()
+	probe_map.depth = 20.0
+	probe_map.ensure_ahead(60.0, func(_a: SubArea) -> void: pass)
+	var stay := Node3D.new()
+	var go := Node3D.new()
+	add_child(stay)
+	add_child(go)
+	stay.global_position = Vector3(0, 0, 5.0)    # born in area 0, stays there
+	go.global_position = Vector3(0, 0, 5.0)
+	probe_map.adopt(stay)
+	probe_map.adopt(go)
+	go.global_position = Vector3(0, 0, 45.0)     # thrown two areas ahead
+	var freed := probe_map.retire_behind(21.0)
+	if freed.has(go):
+		fails.append("a structure thrown ahead was freed with its birth area")
+	if not freed.has(stay):
+		fails.append("a structure left behind was not reclaimed with its area")
+	var rehomed := probe_map.area_at(45.0)
+	if rehomed == null or not rehomed.structures.has(go):
+		fails.append("a thrown structure was not re-homed to the area it is in")
+	stay.queue_free()
+	go.queue_free()
+
+	# Audio: the bed ducks in ACTION rather than swelling.
+	if AMB_DB[SubArea.Intensity.ACTION] >= AMB_DB[SubArea.Intensity.QUIET]:
+		fails.append("the ambience bed does not duck when the storm arrives")
 
 	# --- 5b. the mix rules, not just the assets --------------------------
 	# Asset existence was never the thing that made the mix sound wrong. These
