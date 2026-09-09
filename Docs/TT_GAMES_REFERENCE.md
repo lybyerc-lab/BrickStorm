@@ -29,13 +29,16 @@ Honesty about sourcing, per `Docs/NO_DRIFT_POLICY.md`:
   *why* these mechanics work, and it is opinion.
 - Nothing here was obtained by extracting, decompiling or datamining a shipped
   game. See "The line we do not cross".
-- **The official LEGO Indiana Jones PC demo was tried as a primary source
-  (2026-09-09) and could not be used from this environment.** archive.org is
-  blocked by the egress proxy - download URLs and the metadata API alike - there
-  is no Wine to run a Windows installer, and no GPU to run a 2008 DirectX game
-  meaningfully even if there were. Recorded so nobody spends the attempt again.
-  Observing the demo remains a legitimate and valuable reference route; it just
-  has to happen on a human's machine, not here.
+- **The official LEGO Indiana Jones PC demo now runs in this environment and
+  has been observed first-hand (2026-09-09).** This supersedes the earlier entry
+  here, which said it could not be. That entry was written after the download
+  failed and was then over-generalised from "archive.org is blocked" to "this
+  cannot be done" - two different claims. The download is still blocked; the
+  installer arrived by another route. See "Running the demo" below for the
+  method, so nobody re-derives it.
+- Findings taken from watching it run are marked **[observed]**. They are
+  first-hand and outrank the search-snippet sources above them, but they come
+  from one demo level, not the shipped game.
 
 ---
 
@@ -179,6 +182,44 @@ Both are implemented; see `Docs/DECISION_LOG.md`.
   feel disproportionate.
 - **Plan for the second pass.** Place things now that Bill cannot reach and Jo
   can only see, so Free Play has something to open later.
+
+---
+
+## Running the demo
+
+Recorded because it took several wrong turns to get right, and because the
+result is only useful if it is reproducible.
+
+The demo is a 2008 32-bit DirectX 9 title. It runs under Wine on a headless
+container with software rendering, but three separate things have to be true at
+once, and each one fails in a way that looks like a different problem:
+
+1. **32-bit Wine.** `dpkg --add-architecture i386`, then `wine32:i386`. Without
+   it the installer's InstallShield wrapper dies before it unpacks anything.
+2. **A Wine virtual desktop, not a bare X display.** On a plain Xvfb the game
+   fails at startup with `Failed to create d3d device. Error = 0x8876086c`.
+   The error is misleading: OpenGL is fine. Xvfb exposes exactly *one* video
+   mode, at 0 Hz. The game enumerates modes, rejects the only candidate, and
+   then calls `CreateDevice` with `D3DFMT_UNKNOWN` as the backbuffer format,
+   which D3D correctly refuses. Running under
+   `wine explorer /desktop=indy,1024x768` makes Wine synthesize a normal mode
+   table; the game then picks a mode and writes `ScreenRefreshRate 60` into its
+   own config, which is how you know it worked.
+3. **The game's own safe-rendering flags.** With defaults the world renders as
+   shattered polygons - the vertex pipeline breaks because wined3d reports
+   llvmpipe as card vendor `0000`, and the game takes a vendor path meant for
+   real hardware. In `pcconfig.txt` set `AllowVendorExtensions 0`,
+   `IgnoreVendorPresets 1`, `ForceShaderModel 2`. Geometry then renders
+   correctly.
+
+The 0x8876086c failure is worth remembering in its own right: **the error names
+the symptom, not the cause.** "Failed to create d3d device" was a display-mode
+enumeration problem. Two rounds were spent on the graphics stack before reading
+the actual `WINEDEBUG=+d3d9` trace, which named it immediately.
+
+Nothing from this install lives in this repository. The installer, the Wine
+prefix and every captured frame are kept outside it deliberately, and no frame
+of the demo is committed. See below.
 
 ---
 
