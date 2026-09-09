@@ -235,3 +235,98 @@ The composition matters more than the count:
 133 things to spend on. A generous economy with a thin shop is just noise. This
 is a hard constraint on our own unlock design, and we currently have no shop at
 all.
+
+---
+
+## 10. The shading model, which is the answer to "it doesn't look like a LEGO game"
+
+About 200KB of HLSL ships as readable source inside the executable, with 257
+declared uniforms. It is a permutation system: a preprocessor
+(`#pragma nu2_declare` / `nu2_use`) plus a `ShaderBuilder` that compiles the
+combination each material asks for. The pipeline per pixel is
+
+```
+fresnelStage -> reflectivityStage -> lightingStage -> tweakStage
+             -> envmapStage -> refractionStage
+```
+
+Four lighting models are selectable per material: **Lambert, Phong, Ward**
+(anisotropic) and **Gooch** (non-photorealistic). Not one shader with knobs -
+four models.
+
+What actually produces the look, in order of how much it would change ours:
+
+- **A shading term smuggled into the LENGTH of the vertex normal.** The dapple
+  factor is literally `length(varying_normal.xyz)`, and it multiplies surface
+  colour. Interpolation shortens a normal wherever adjacent vertex normals
+  diverge, so creases and curvature darken **for free** - no extra attribute, no
+  texture, no second pass - and the exporter can shorten normals deliberately to
+  author darkening. Normalisation throws this quantity away in every renderer
+  that does not think to look. *(The mechanism is explicit in the code; that
+  they used it for contact shading is my inference.)*
+- **Glow LERPs toward white, it does not add.**
+  `diffuseLight = lerp(diffuseLight, 1.0, incandescentGlow.rgb)`. A glowing
+  stud is a surface washed to full brightness, per channel, with no bloom pass
+  anywhere. Additive glow blows out and looks like a bug; this cannot.
+- **Three directional lights, and specular has its own colours.**
+  `lightColor0..2` for diffuse and **separate** `specLightColor0..2` for
+  specular, evaluated in parallel by packing three dot products into one
+  `half4`. Separate colours are what let plastic be shiny without the diffuse
+  going pale - which is exactly the "specular blowout" we hit and solved by
+  splitting materials instead.
+- **Ambient is a diffuse environment cube, not a flat colour.**
+  `texCUBE(diffenvmap_samplerCube, worldNormal)` with an `envRotation`. The top
+  of a brick picks up sky and its underside picks up ground. A constant ambient
+  term is the single flattest thing a renderer can do, and it is what we do.
+- **Specular is multiplied by `fresnel * fs_lodFactor`.** Grazing angles get the
+  highlight (the plastic read), and distant geometry loses it entirely - which
+  kills shimmer and costs nothing.
+- **Two ambient terms and one global dimmer.** Per-material `ambientColor` plus
+  global `sceneAmbientColor`, and under `MODULATE_AMB_INC` the scene's alpha
+  scales material ambient *and* glow together. One knob dims every self-lit
+  surface in the level at once - walking into a dark interior is a single value.
+
+*Act on this, in this order:* the environment-cube ambient and the
+fresnel-scaled specular are the two that would change our screenshots most, and
+Godot gives us both almost for free. The normal-length trick is worth stealing
+for authored props. Nothing here needs an asset.
+
+---
+
+## 11. Systems we have no equivalent of
+
+Straight from the engine's vocabulary. Each of these is a named subsystem in
+their code and an absence in ours.
+
+- **Authored gameplay volumes.** `AREA_PLAYERSAFE` and `NoFightingZone` are
+  level data - places the designer marks as safe, or where combat is switched
+  off. We now have `SubArea`; these are the obvious next fields on it, and they
+  are cheap.
+- **Hints are stateful, tagged and cancellable.** `SetHint`, `CurrentHintId`,
+  `HintAvailable`, `TagHint`, `HintComplete`, `CancelHint`. A hint is raised,
+  becomes available, is satisfied, or is *withdrawn* when it stops being
+  relevant. Not a tooltip. We have nothing.
+- **"Attracto" - the magnet has a target, not just a player.** `AttractoTarget`
+  and `AttractoDeposit` alongside `Attracto`. Collectibles fly to a
+  *destination*, which is what makes a deposit-the-loot beat possible. Our
+  magnet only ever pulls to the player.
+- **Co-op is in the trigger vocabulary, not layered on top.** Nearly every
+  trigger has an "either player" form: `EitherPlayerInTriggerArea`,
+  `EitherPlayerPullingLever`, `EitherPlayerPushingSpinner`,
+  `EitherPlayerOnForcePlatform`, `EitherPlayerSuperCarrying`. And **"party" is
+  its own entity** - `PartyUnderCover`, `AnyPartyOnRideObject`,
+  `PartyCanBeUnderCover` - distinct from either individual player. Cooperation
+  has explicit verbs too: `HelpWithCarry`, `CanHelpWithTriggers`.
+- **Traversal is a named move set, and ledges are terrain.** `GrapSwing`,
+  `WHIPSWING`, `RappelDownRope`, `TightropeCatch`, `LEDGEMOVE`, and
+  `LedgeTerrain` - a ledge is a *terrain type*, not a collider bolted to each
+  prop. `SuperCarry` is the two-handed heavy carry, with its own drop, throw and
+  blow-up cases.
+- **Per-instance overrides everywhere.** `AwkwardShapeOverride`,
+  `SetScaleOverride`, `ConveyorOverride`, `AIOverrideControl`,
+  `OverrideAnimation`. A designer can break any rule on one object without
+  touching the system - which is how a hand-authored set piece stays hand-
+  authored.
+
+They also shipped a flag called `DisableNarrowSocks`, which is offered here
+without further comment.
