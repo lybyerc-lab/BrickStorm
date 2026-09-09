@@ -3,9 +3,9 @@
 ## Status
 
 - **SOURCE GATE: PASS** with `tools/run_validation.sh` completing all checks, including 59/59 behavior contracts.
-- **CLEAN-EXTRACTED SOURCE GATE: PASS** with the generated source ZIP manifest verified entry-for-entry and the full source validation suite rerun from a fresh extraction.
-- **ENGINE GATE: PENDING** until the complete Godot 4.7.2 runner executes on this exact source candidate.
-- **PHYSICAL ANDROID GATE: PENDING** after engine clearance.
+- **CLEAN-EXTRACTED SOURCE GATE: PASS** with the final source ZIP manifest verified 315/315 and the full source validation suite rerun from a fresh extraction.
+- **ENGINE GATE: PASS** with Godot `4.7.2.stable.official.ed1daf0bf`, including resource import, all engine contract scenes, a 600-frame soak, and graphical touch dispatch at 1280 x 720, 1920 x 1080, and 2400 x 1080 from the exact final ZIP after fresh extraction.
+- **PHYSICAL ANDROID GATE: PENDING**.
 
 ## Goal
 
@@ -31,44 +31,18 @@ A typed semantic runtime supports ALL/ANY/NONE conditions, one-shot/repeatable o
 
 ### `SectionBudget`
 
-Section limits are now explicitly separated into:
-
-- static cluster count and visible cluster count;
-- material families and texture residency;
-- active interactables, NPCs, and vehicles;
-- dynamic bodies, tornado fragments, and active studs;
-- particles, audio voices, and camera requests.
+Section limits are now explicitly separated into static clusters/visible clusters, material families/texture residency, active interactables/NPCs/vehicles, dynamic bodies/tornado fragments/studs, particles, audio voices, and camera requests.
 
 ### `StaticRenderClusterPolicy`
 
-The source now records the rule inferred from the scene archaeology: **author modularly, ship compatible inert scenery in spatially sensible runtime batches, preserve collision separately, and never cluster away LEGO-active identity.** No automatic mesh baker is enabled in 0.3.6. That implementation waits for the representative phone stress scene.
+The source records the archaeology-derived rule: **author modularly, ship compatible inert scenery in spatially sensible runtime batches, preserve collision separately, and never cluster away LEGO-active identity.** No automatic mesh baker is enabled in 0.3.6. That implementation waits for the representative phone stress scene.
 
-## Regression policy
+## Regression result
 
-The following 0.3.5 results remain comparison floors:
-
-- truck control: 5/5;
-- road crossing: 5/5;
-- storm-probe build rhythm: 5/5;
-- latest barn destruction: 4/5;
-- authored opening generator/cage chain: reference slice.
-
-New architecture must preserve or clearly improve the actual play result. If an abstraction makes the game less tactile, less readable, or less fun, the abstraction loses.
-
-## Engine gate additions
-
-`core_contract_engine_test.gd` now checks:
-
-- semantic build AudioEvent exists and keeps the original initial variant;
-- ActionAnimationProfile retains accepted timing defaults;
-- BuildRecipe creates explicit ordered steps and preserves build cadence;
-- InteractionGraph emits the expected semantic output once;
-- SectionBudget defaults are internally sane;
-- StaticRenderClusterPolicy keeps collision separate.
+The automated Godot gate preserves the measurable 0.3.5 floors, including truck nose-heading semantics, road crossing, opening build progression, touch lifecycle safety, visible carried tools, character feel, and canonical stud identity. Subjective phone feel remains a physical-device judgment.
 
 ## Known deferred work
 
-- Godot 4.7.2 execution of this exact candidate.
 - Physical Android acceptance.
 - Representative Wakita/tornado stress scene and measured cluster/material/texture/physics budgets.
 - First production InteractionGraph chain.
