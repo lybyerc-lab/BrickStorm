@@ -4,6 +4,27 @@
 
 Build the game that feels like the original *Twister* was adapted during the classic early Traveller's Tales LEGO era: recognizable movie beats, slapstick comedy, chunky construction, constant smashing and rebuilding, collectible-driven exploration, arcade vehicles, secrets, and a tornado that physically rearranges the level around the player.
 
+## Craftsmanship Bar
+
+The target reaction is:
+
+> **"Wait... they made a LEGO: Twister game?"**
+
+BrickStorm should not settle for reading as a competent fan prototype or a generic game inspired by classic LEGO titles. The goal is enough consistency, specificity, polish, and authored detail that a player could briefly believe they had discovered a forgotten licensed Traveller's Tales-era adaptation.
+
+That standard applies to the whole experience, not screenshots alone:
+
+- character silhouettes and animation must immediately read as classic LEGO-game characters;
+- locomotion must carry the waist-led, shoulder-driven toy rhythm expected from the reference era;
+- environments must look intentionally authored rather than assembled from convenient primitives;
+- LEGO-active objects must be visually distinct, useful, and integrated into the world rather than scattered on top of it;
+- camera, audio, studs, builds, destruction, reactions, UI, and transitions must all reinforce the same game language;
+- recognizable *Twister* locations and moments must be specific enough that the game could not be mistaken for a generic tornado adventure;
+- mobile constraints may change implementation cost, but should not be visible as unfinished presentation;
+- placeholders are acceptable during development only when they are clearly temporary and do not become the quality target.
+
+A feature is not finished merely because it works. It is finished when its behavior, presentation, feedback, and surrounding composition belong convincingly to the same imagined LEGO: Twister release.
+
 ## The Six Pillars
 
 ### 1. Twister First
