@@ -311,3 +311,51 @@ input, capture, and Wine (installable from the Ubuntu repositories, which do
 work; only third-party PPAs are blocked). The fourth is not: **archive.org is
 blocked by the egress proxy, so the demo file cannot be fetched here.** That is a
 transfer problem, not a capability problem, and it is the only remaining wall.
+
+---
+
+# Follow-up 2 (2026-09-10): four rounds, and two figures above are unreliable
+
+Re-measured after the part-library work, and this time **N=4** rather than N=1.
+That turns out to matter, and it invalidates two numbers reported above.
+
+| metric | min | max | mean | spread |
+|---|---|---|---|---|
+| final score | 791 | 3,038 | 2,231 | **3.8×** |
+| bricks torn | 136 | 143 | 138 | 1.1× |
+| STUD / min | 101.1 | 119.1 | 111.1 | 1.2× |
+| SMASH / min | 2.1 | 5.1 | 3.4 | **2.4×** |
+| longest silence | 6.3 s | 14.6 s | 10.8 s | **2.3×** |
+
+`--playthrough` does not fix its seed, so every round is a different world.
+Bricks torn, stud rate and live structure count (159 in all four rounds) are
+stable. **Score, smash rate and dead time are not**, and those are exactly the
+three the sections above quote as single-run results.
+
+## What this means for the figures above
+
+- **"Longest silence 7.7 s" is not a result.** It is one sample from a
+  distribution that spans 6.3–14.6 s. The honest figure is a mean around 11 s.
+  Dead time did not improve to 7.7 s and has not since regressed to 14.6 s; it
+  has been roughly 6–15 s the whole time and nobody measured the spread.
+- **"SMASH / min 6.3" likewise**, and here the four-round mean of **3.4** sits
+  *below* the observed maximum of 5.1, so the decline looks real rather than
+  noise. The likely cause is this session's own work: smashable props were
+  rebuilt from round parts with far fewer pieces each (barrel 21 → 6, bin
+  12 → 7, tyre stack 18 → 3, hay bale 8 → 2), so a prop now clears in one hit
+  where it used to take several, and each of those hits was a SMASH event.
+  **Part variety bought silhouette at the cost of smash density.** That was not
+  a tradeoff anyone chose; it was measured after the fact.
+
+## The instrument lesson, again
+
+This is the fourth measurement problem in this project, and it is the same
+shape as the other three: a number was trusted before the instrument was
+checked. Here the instrument was fine — the *sample size* was one, on an
+unseeded generator, for a metric with a 2.4× spread.
+
+**Single-run gameplay figures from `--playthrough` should not be quoted as
+results.** Either seed the round the way `--capture` does (`CAPTURE_SEED`) so
+runs are comparable, or report N≥4 with a spread. Until one of those is done,
+the only trustworthy numbers out of this harness are bricks torn, stud rate and
+structure count.

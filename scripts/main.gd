@@ -1605,6 +1605,14 @@ func _grab(name: String) -> void:
 		# be judged from a gameplay camera and they are the whole identity.
 		var focus := player.global_position
 		hud.visible = false
+		# The same gameplay frame, without the interface. Any measurement of
+		# how the WORLD is lit or coloured has to be taken off a frame the HUD
+		# is not sitting on: its white text, its two big flat buttons and the
+		# thumb circles are a large fraction of the pixels, and they drag the
+		# clipping and saturation figures on their own. Comparing that against
+		# a demo frame would be comparing our HUD to their masonry.
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/world.png" % _capture_dir)
 		_camera_locked = true
 		# Freeze the player first: _physics_process re-aims the rig along its
 		# movement every frame and would overwrite the pose set below.
