@@ -388,135 +388,344 @@ static func stud_visual(color: Color) -> Node3D:
 static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(0.96, 0.80, 0.19)) -> Node3D:
 	var root := Node3D.new()
 
-	# Real minifig proportions: legs ~1.5 bricks, torso ~1.5, head ~1, and the
-	# arms hang OUTSIDE the torso. Getting the arms wrong buries them inside the
-	# body and the silhouette stops reading as a minifig at all.
-	var hips := brick_visual(2, 1, 0.16, legs, false)
-	hips.position = Vector3(0, 0.68, 0)
-	hips.scale = Vector3(0.94, 1.0, 0.92)
+	# CANONICAL MINIFIG PROPORTIONS, in the same millimetres as the bricks.
+	# Getting these wrong is why the character read as a Roblox avatar: it was
+	# 2.91 brick-heights tall where a minifig is 4.17, and its head was half
+	# the size it should be. A minifig is SHORT-LEGGED WITH A BIG HEAD - that
+	# silhouette is the character. Measured against the demo, see
+	# Docs/TT_GAMES_REFERENCE.md.
+	var mm := STUD / 8.0                 # our metres per real millimetre
+	var leg_h := 17.6 * mm               # hips + legs
+	var torso_h := 15.4 * mm
+	var head_h := 9.6 * mm
+	var head_r := 6.0 * mm               # 12mm diameter - three quarters the torso
+	var torso_w := 16.0 * mm
+	var torso_d := 8.0 * mm
+
+	var hip_y := leg_h
+	var torso_y := hip_y + torso_h * 0.5
+	var head_y := hip_y + torso_h + head_h * 0.45   # the head sits down on the neck
+
+	# --- legs: a hip block and two legs, short and wide ---------------------
+	var hips := brick_visual(2, 1, leg_h * 0.30, legs, false)
+	hips.position = Vector3(0, hip_y - leg_h * 0.15, 0)
+	hips.scale = Vector3(1.0, 1.0, torso_d / STUD)
 	root.add_child(hips)
 
 	for side in [-1.0, 1.0]:
 		var hip := Node3D.new()
 		hip.name = "HipR" if side > 0.0 else "HipL"
-		hip.position = Vector3(side * 0.22, 0.64, 0)
+		hip.position = Vector3(side * torso_w * 0.25, hip_y - leg_h * 0.30, 0)
 		root.add_child(hip)
-		var leg := brick_visual(1, 1, 0.60, legs, false)
-		leg.position = Vector3(0, -0.30, 0)
-		leg.scale = Vector3(0.80, 1.0, 0.92)
+		var leg := brick_visual(1, 1, leg_h * 0.70, legs, false)
+		leg.position = Vector3(0, -leg_h * 0.35, 0)
+		leg.scale = Vector3(0.92, 1.0, torso_d / STUD)
 		hip.add_child(leg)
-		var foot := brick_visual(1, 1, 0.09, C_BLACK, false)
-		foot.position = Vector3(0, -0.61, 0.05)
-		foot.scale = Vector3(0.84, 1.0, 1.20)
+		var foot := brick_visual(1, 1, 1.6 * mm, C_BLACK, false)
+		foot.position = Vector3(0, -leg_h * 0.70 + 0.8 * mm, 1.2 * mm)
+		foot.scale = Vector3(0.96, 1.0, (torso_d + 3.0) / STUD)
 		hip.add_child(foot)
 
-	# The real torso is a TRAPEZOID - narrow at the neck, flaring to the waist,
-	# with the shoulders cut back. A plain box is the shape a generic blocky
-	# avatar has, and it reads as one. Two stacked sections approximate the
-	# flare without a custom mesh.
-	var t := brick_visual(2, 1, 0.30, shirt, false)
-	t.position = Vector3(0, 0.86, 0)
-	t.scale = Vector3(1.0, 1.0, 1.0)
-	root.add_child(t)
-	var t_up := brick_visual(2, 1, 0.28, shirt, false)
-	t_up.position = Vector3(0, 1.14, 0)
-	t_up.scale = Vector3(0.86, 1.0, 0.92)
-	root.add_child(t_up)
-	var neck := brick_visual(1, 1, 0.10, shirt, false)
-	neck.position = Vector3(0, 1.30, 0)
-	neck.scale = Vector3(0.9, 1.0, 0.8)
+	# --- torso: a TRAPEZOID, narrow at the neck, flaring to the waist -------
+	# Three stacked sections approximate the flare. A plain box is the shape a
+	# generic blocky avatar has, and it reads as one.
+	# Two sections, not three, and a gentle taper. Three made visible steps and
+	# the torso read as a stack of slabs rather than one flaring part.
+	var sections := [
+		[0.62, 1.00, 0.31],     # body    - height fraction, width fraction, y centre
+		[0.40, 0.90, 0.80],     # shoulders, cut back
+	]
+	for sec in sections:
+		var seg := brick_visual(2, 1, torso_h * float(sec[0]), shirt, false)
+		seg.position = Vector3(0, hip_y + torso_h * float(sec[2]), 0)
+		seg.scale = Vector3(float(sec[1]), 1.0, torso_d / STUD)
+		root.add_child(seg)
+
+	# The neck bracket, visible under the chin on the real part.
+	# The neck is a peg the head sits ON, and on the real part you barely see
+	# it. At full width it reads as a skin-coloured collar.
+	var neck := brick_visual(1, 1, 2.4 * mm, skin, false)
+	neck.position = Vector3(0, hip_y + torso_h - 0.4 * mm, 0)
+	neck.scale = Vector3(0.40, 1.0, 0.40)
 	root.add_child(neck)
 
+	# --- arms: hung OUTSIDE the torso, angled out and forward ---------------
 	for side in [-1.0, 1.0]:
 		var sh := Node3D.new()
 		sh.name = "ShoulderR" if side > 0.0 else "ShoulderL"
-		sh.position = Vector3(side * 0.52, 1.16, 0)
+		# OUTSIDE the torso. At 0.46 of the torso width the arms sat inside its
+		# own footprint and were invisible - the silhouette stopped reading as
+		# a minifig, which is the one thing the arms are for.
+		sh.position = Vector3(side * (torso_w * 0.5 + 1.6 * mm),
+			hip_y + torso_h * 0.80, 0)
 		root.add_child(sh)
-		var a := brick_visual(1, 1, 0.40, shirt, false)
-		a.position = Vector3(0, -0.20, 0)
-		a.scale = Vector3(0.56, 1.0, 0.72)
-		a.rotation = Vector3(0, 0, side * -0.20)
+		var a := brick_visual(1, 1, 11.0 * mm, shirt, false)
+		a.position = Vector3(0, -5.5 * mm, 0)
+		a.scale = Vector3(0.74, 1.0, 0.80)
+		a.rotation = Vector3(0.10, 0, side * -0.20)
 		sh.add_child(a)
-		# A minifig hand is a C-shaped clip, not a peg. The gap is small but it
-		# is the silhouette that says "this holds a thing", and a solid
-		# cylinder reads as a mitten.
+		# A minifig hand is a C-shaped clip, not a peg.
 		var hand := Node3D.new()
-		hand.position = Vector3(side * 0.06, -0.42, 0.04)
-		hand.rotation = Vector3(0.6, 0, 0)
+		hand.position = Vector3(side * 1.6 * mm, -11.8 * mm, 1.8 * mm)
+		hand.rotation = Vector3(0.55, 0, 0)
 		sh.add_child(hand)
-		for seg in range(5):
-			var ang: float = -PI * 0.72 + float(seg) * (PI * 1.44 / 4.0)
+		for seg2 in range(5):
+			var ang: float = -PI * 0.72 + float(seg2) * (PI * 1.44 / 4.0)
 			var piece := MeshInstance3D.new()
 			piece.mesh = brick_mesh()
-			piece.scale = Vector3(0.052, 0.105, 0.052)
-			piece.position = Vector3(sin(ang) * 0.062, 0.0, cos(ang) * 0.062)
+			piece.scale = Vector3(0.9 * mm, 3.0 * mm, 0.9 * mm)
+			piece.position = Vector3(sin(ang) * 1.9 * mm, 0.0, cos(ang) * 1.9 * mm)
 			piece.rotation = Vector3(0, ang, 0)
 			piece.material_override = mat(skin)
 			hand.add_child(piece)
 
+	# --- head: a BIG rounded cylinder --------------------------------------
 	var head := MeshInstance3D.new()
-	var hmesh := CylinderMesh.new()
-	hmesh.top_radius = 0.195
-	hmesh.bottom_radius = 0.195
-	hmesh.height = 0.38
-	hmesh.radial_segments = 16
-	head.mesh = hmesh
-	head.material_override = mat(skin)
-	head.position = Vector3(0, 1.54, 0)
+	head.mesh = head_mesh()
+	# head_mesh() is a unit-RADIUS barrel (diameter 2), so the scale is the
+	# radius, not the diameter. Doubling it made the head twice as wide as it
+	# was tall and squeezed the printed face into a narrow band, because the
+	# texture stretches with the geometry.
+	head.scale = Vector3(head_r, head_h, head_r)
+	head.material_override = face_material(skin)
+	head.position = Vector3(0, head_y, 0)
 	head.name = "Head"
 	root.add_child(head)
-	_add_face(head, 0.204)
 
-	# THE STUD ON TOP OF THE HEAD. This is the single most identifying feature
-	# a minifig has, and it was missing - which is most of why the character
-	# read as a generic blocky avatar rather than a minifig. It is hidden under
-	# most hair pieces and visible under hats and on a bare head, exactly as on
-	# the real part.
+	# The stud on top of the head - the single most identifying feature a
+	# minifig has. Hidden under most hair, visible under a hat and bare.
 	var hstud := MeshInstance3D.new()
 	hstud.mesh = stud_mesh()
 	hstud.material_override = mat(skin)
-	hstud.position = Vector3(0, 1.54 + 0.19 + STUD_H * 0.5, 0)
+	hstud.position = Vector3(0, head_y + head_h * 0.5 + STUD_H * 0.5, 0)
 	hstud.name = "HeadStud"
 	root.add_child(hstud)
 
-	# Hair caps the head and overlaps it - a box floating above the skull is
-	# the single most obvious tell that a model is not a minifig.
-	var h := brick_visual(2, 2, 0.20, hair, false)
-	h.position = Vector3(0, 1.76, 0)
-	h.scale = Vector3(0.44, 1.0, 0.44)
-	root.add_child(h)
+	# Hair caps the head and overlaps it.
+	# Hair sits ON the head and stops just above the brows. Dropped any lower
+	# it cuts across the eyes and reads as a welding visor, which is what it
+	# was doing - the brows are 2.9mm down from the crown, so the hair's
+	# underside has to stay above that.
+	var cap := brick_visual(2, 1, 4.0 * mm, hair, false)
+	cap.position = Vector3(0, head_y + head_h * 0.5 + 0.6 * mm, 0)
+	cap.scale = Vector3(0.88, 1.0, 0.88)
+	root.add_child(cap)
+
 	return root
 
 
-# The classic two-dots-and-a-smile. Nothing else makes a shape read as a
-# minifig this cheaply - without a face it is a yellow cylinder on a box.
-static func _add_face(head: MeshInstance3D, r: float) -> void:
-	var ink := mat(C_BLACK)
-	for ex in [-0.082, 0.082]:
-		var eye := MeshInstance3D.new()
-		var em := CylinderMesh.new()
-		em.top_radius = 0.036
-		em.bottom_radius = 0.036
-		em.height = 0.020
-		em.radial_segments = 14
-		eye.mesh = em
-		eye.material_override = ink
-		eye.position = Vector3(ex, 0.052, r)
-		eye.rotation = Vector3(PI * 0.5, 0, 0)
-		head.add_child(eye)
-
-	for i in range(5):
-		var f: float = (float(i) / 4.0) * 2.0 - 1.0        # -1 .. 1
-		var dot := MeshInstance3D.new()
-		var dm := CylinderMesh.new()
-		dm.top_radius = 0.023
-		dm.bottom_radius = 0.023
-		dm.height = 0.020
-		dm.radial_segments = 12
-		dot.mesh = dm
-		dot.material_override = ink
-		# ends ride up: a smile, not a frown
-		dot.position = Vector3(f * 0.078, -0.070 + absf(f) * 0.040, r)
-		dot.rotation = Vector3(PI * 0.5, 0, 0)
-		head.add_child(dot)
+# ============================================================================
 # [BS:BUILD:MINIFIG:END]
+# [BS:BUILD:FACE]
+# Purpose: The minifig face, PRINTED onto the head rather than stuck to it.
+# Invariants:
+# - IT IS A TEXTURE, NOT GEOMETRY. Built as geometry the features float off a
+#   curved surface, cast their own little shadows, and poke past the head's
+#   silhouette at the edges - which is exactly what ours did. A real minifig
+#   face is pad-printed and perfectly flat, and so is the demo's.
+# - BROWS CARRY THE EXPRESSION. Without them a minifig looks vacant no matter
+#   what the mouth does. The demo's Indy is brows first, everything else after.
+# - Small features. The 1978 smiley has huge dot eyes; every modern face, and
+#   every face in the demo, uses small eyes with a pupil and a highlight.
+# - Drawn into the middle of the wrap so it lands on the FRONT of the head.
+#   The rest of the wrap stays plain skin - the back of a head is blank.
+# ============================================================================
+# The head is built here rather than taken from CylinderMesh so that the UVs
+# are OURS: u = 0.5 is dead ahead (-Z), which is where the face gets printed.
+# Relying on the primitive's own UV origin put the face on the back of the
+# head. It also lets the top and bottom edges carry a chamfer, like every other
+# moulded part in the game.
+static var _head_mesh: ArrayMesh = null
+
+
+static func head_mesh() -> ArrayMesh:
+	if _head_mesh != null:
+		return _head_mesh
+	var seg := 28
+	var c := 0.055                      # edge chamfer, as a fraction of height
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	# Rings: bottom rim, bottom chamfer, body, top chamfer, top rim.
+	var rings := [
+		[-0.5, 0.90], [-0.5 + c, 0.985], [0.0, 1.0], [0.5 - c, 0.985], [0.5, 0.90],
+	]
+	for ri in range(rings.size() - 1):
+		var y0: float = rings[ri][0]
+		var r0: float = rings[ri][1]
+		var y1: float = rings[ri + 1][0]
+		var r1: float = rings[ri + 1][1]
+		for i in range(seg):
+			var a0 := TAU * float(i) / float(seg)
+			var a1 := TAU * float(i + 1) / float(seg)
+			# Angle 0 points at +Z, so u = 0.5 lands on the front of the head.
+			# THIS RIG FACES +Z, not Godot's usual -Z: _animate_walk aims it
+			# with atan2(x, z). Mapping the face to -Z printed it on the back
+			# of the head, and all that showed from the front was the seam.
+			var p00 := Vector3(sin(a0) * r0, y0, cos(a0) * r0)
+			var p10 := Vector3(sin(a1) * r0, y0, cos(a1) * r0)
+			var p11 := Vector3(sin(a1) * r1, y1, cos(a1) * r1)
+			var p01 := Vector3(sin(a0) * r1, y1, cos(a0) * r1)
+			var u0 := 0.5 + (a0 / TAU if a0 <= PI else (a0 - TAU) / TAU)
+			var u1 := 0.5 + (a1 / TAU if a1 <= PI else (a1 - TAU) / TAU)
+			if i == seg - 1:
+				u1 = u0 + 1.0 / float(seg)
+			var v0 := 0.5 - y0
+			var v1 := 0.5 - y1
+			# Normals matter here as much as UVs: SurfaceTool fixes the vertex
+			# format from the FIRST vertex, so a barrel written without normals
+			# makes every later set_normal() a silent no-op and the caps come
+			# out unlit. Write both, every vertex, from the start.
+			var n0 := Vector3(sin(a0), 0.0, cos(a0))
+			var n1 := Vector3(sin(a1), 0.0, cos(a1))
+			_head_quad(st, p00, p10, p11, p01,
+				Vector2(u0, v0), Vector2(u1, v0), Vector2(u1, v1), Vector2(u0, v1),
+				n0, n1, n1, n0)
+
+	# Caps.
+	for top in [false, true]:
+		var y: float = 0.5 if top else -0.5
+		var n := Vector3(0, 1.0 if top else -1.0, 0)
+		for i in range(seg):
+			var a0 := TAU * float(i) / float(seg)
+			var a1 := TAU * float(i + 1) / float(seg)
+			var pa := Vector3(sin(a0) * 0.90, y, cos(a0) * 0.90)
+			var pb := Vector3(sin(a1) * 0.90, y, cos(a1) * 0.90)
+			var pc := Vector3(0, y, 0)
+			_emit_tri(st, pc, pa, pb,
+				Vector2(0.02, 0.02), Vector2(0.02, 0.02), Vector2(0.02, 0.02),
+				n, n, n)
+
+	st.generate_tangents()
+	_head_mesh = st.commit()
+	return _head_mesh
+
+
+static func _head_quad(st: SurfaceTool, a: Vector3, b: Vector3, cc: Vector3, d: Vector3,
+		ua: Vector2, ub: Vector2, uc: Vector2, ud: Vector2,
+		na: Vector3, nb: Vector3, nc: Vector3, nd: Vector3) -> void:
+	# Winding derived from the normal, not tracked by hand. Flipping the head's
+	# facing direction by one sign inverted every triangle and turned the head
+	# inside out - the identical mistake already recorded for the brick mesh,
+	# made a second time. Deriving it means a sign change can never do this.
+	_emit_tri(st, a, b, cc, ua, ub, uc, na, nb, nc)
+	_emit_tri(st, a, cc, d, ua, uc, ud, na, nc, nd)
+
+
+static func _emit_tri(st: SurfaceTool, p0: Vector3, p1: Vector3, p2: Vector3,
+		t0: Vector2, t1: Vector2, t2: Vector2,
+		n0: Vector3, n1: Vector3, n2: Vector3) -> void:
+	var face_n := (n0 + n1 + n2).normalized()
+	var order := [[p0, t0, n0], [p1, t1, n1], [p2, t2, n2]]
+	if (p1 - p0).cross(p2 - p0).dot(face_n) < 0.0:
+		order = [[p0, t0, n0], [p2, t2, n2], [p1, t1, n1]]
+	for e in order:
+		st.set_normal(e[2])
+		st.set_uv(e[1])
+		st.add_vertex(e[0])
+
+
+# The texture wraps the whole head, so its aspect has to match the head's:
+# u spans the circumference (pi * 12mm) and v spans the height (9.6mm). At
+# 256x128 the pixels were twice as tall as they were wide and every feature
+# came out stretched. 512x128 makes them square.
+const FACE_W := 512
+const FACE_H := 128
+const HEAD_MM := 12.0                  # head diameter, real minifig
+const HEAD_H_MM := 9.6
+
+
+static func face_texture(skin: Color) -> ImageTexture:
+	var key := "face_%d" % skin.to_rgba32()
+	if _mats.has(key):
+		return _mats[key]
+	var img := Image.create(FACE_W, FACE_H, false, Image.FORMAT_RGBA8)
+	img.fill(skin)
+
+	# Everything below is in real minifig millimetres, converted once. Laying a
+	# face out in pixels means re-guessing it every time the texture changes
+	# size, and the proportions are the whole point.
+	var ppm := float(FACE_H) / HEAD_H_MM        # pixels per millimetre
+	var cx := FACE_W * 0.5
+	var ink := C_BLACK
+
+	# Vertical layout, measured from the top of the head.
+	var brow_y := 2.9 * ppm
+	var eye_y := 4.1 * ppm
+	var mouth_y := 6.7 * ppm
+	var eye_dx := 2.5 * ppm
+
+	for side in [-1.0, 1.0]:
+		# Brow: a bar with the outer end lifted. This is what gives a minifig
+		# an expression - the demo's Indy is brows first.
+		var bx: float = cx + side * eye_dx
+		var half := 1.7 * ppm
+		for i in range(30):
+			var t := float(i) / 29.0
+			var x := int(bx + (t - 0.5) * half * 2.0)
+			var lift: float = -t * 0.45 * ppm if side > 0.0 else -(1.0 - t) * 0.45 * ppm
+			_dot(img, x, int(brow_y + lift), int(maxf(0.22 * ppm, 1.0)), ink)
+
+		# Eye: small, with a pupil highlight. The huge dot eye is the 1978 face.
+		var ex: float = cx + side * eye_dx
+		_disc(img, ex, eye_y, 0.80 * ppm, ink)
+		_disc(img, ex + 0.22 * ppm, eye_y - 0.26 * ppm, 0.24 * ppm, Color(1, 1, 1, 1))
+
+	# Mouth: a thin curve, ends lifted.
+	for i in range(56):
+		var t2 := float(i) / 55.0
+		var f := t2 * 2.0 - 1.0
+		_dot(img, int(cx + f * 1.9 * ppm), int(mouth_y - f * f * 0.55 * ppm),
+			int(maxf(0.16 * ppm, 1.0)), ink)
+
+	# Stubble, which is most of what makes the demo's Indy read as Indy.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260910
+	for i in range(240):
+		var a := rng.randf() * TAU
+		var rr := 1.6 + rng.randf() * 1.5
+		var sx := cx + cos(a) * rr * ppm * 1.25
+		var sy := mouth_y - 0.2 * ppm + sin(a) * rr * ppm * 0.62
+		if sy < eye_y + 0.9 * ppm or sy > HEAD_H_MM * ppm - 0.4 * ppm:
+			continue
+		if absf(sx - cx) > 3.1 * ppm:
+			continue
+		_dot(img, int(sx), int(sy), 1, Color(ink.r, ink.g, ink.b, 0.62))
+
+	var tex := ImageTexture.create_from_image(img)
+	_mats[key] = tex
+	return tex
+
+
+static func _dot(img: Image, x: int, y: int, r: int, c: Color) -> void:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if dx * dx + dy * dy > r * r:
+				continue
+			var px := x + dx
+			var py := y + dy
+			if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
+				continue
+			if c.a >= 1.0:
+				img.set_pixel(px, py, c)
+			else:
+				img.set_pixel(px, py, img.get_pixel(px, py).lerp(c, c.a))
+
+
+static func _disc(img: Image, cx: float, cy: float, r: float, c: Color) -> void:
+	_dot(img, int(cx), int(cy), int(r), c)
+
+
+static func face_material(skin: Color) -> ShaderMaterial:
+	var key := "facemat_%d" % skin.to_rgba32()
+	if _mats.has(key):
+		return _mats[key]
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/face.gdshader")
+	m.set_shader_parameter("face_tex", face_texture(skin))
+	m.set_shader_parameter("p_roughness", PLASTIC_ROUGHNESS)
+	m.set_shader_parameter("p_specular", PLASTIC_SPECULAR)
+	m.set_shader_parameter("p_rim", PLASTIC_RIM * 0.5)   # a face is not a mirror
+	_mats[key] = m
+	return m
+# [BS:BUILD:FACE:END]

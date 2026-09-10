@@ -1598,9 +1598,15 @@ func _grab(name: String) -> void:
 		# movement every frame and would overwrite the pose set below.
 		player.set_physics_process(false)
 		player.velocity = Vector3.ZERO
-		var eye := focus + Vector3(1.9, 1.05, 2.8)
+		# Frame the HEAD, wherever it actually is. These offsets were tuned for
+		# a figure 30% shorter and framed its chest once the proportions were
+		# corrected.
+		var head_n := player.find_child("Head", true, false) as Node3D
+		var aim: Vector3 = head_n.global_position if head_n != null \
+			else focus + Vector3(0, 1.9, 0)
+		var eye := aim + Vector3(1.55, -0.45, 2.25)
 		camera.global_position = eye
-		camera.look_at(focus + Vector3(0, 0.90, 0), Vector3.UP)
+		camera.look_at(aim, Vector3.UP)
 		# Turn the minifig to the lens and hold a mid-stride pose: a closeup of
 		# the back of the head verifies nothing.
 		var to_cam := eye - focus
@@ -1618,9 +1624,13 @@ func _grab(name: String) -> void:
 		var img2 := get_viewport().get_texture().get_image()
 		img2.save_png("%s/minifig.png" % _capture_dir)
 
-		# Head-on at head height: the only way to confirm the face renders.
-		camera.global_position = focus + Vector3(0, 1.52, 1.15)
-		camera.look_at(focus + Vector3(0, 1.50, 0), Vector3.UP)
+		# Head-on at HEAD height, taken from the head itself. These were fixed
+		# offsets tuned for a figure 30% shorter and framed its chest once the
+		# proportions were corrected.
+		var hp: Vector3 = head_n.global_position if head_n != null \
+			else focus + Vector3(0, 2.35, 0)
+		camera.global_position = hp + Vector3(0, 0.02, 1.45)
+		camera.look_at(hp, Vector3.UP)
 		player._visual_root.rotation = Vector3.ZERO
 		await get_tree().process_frame
 		player._visual_root.rotation = Vector3.ZERO

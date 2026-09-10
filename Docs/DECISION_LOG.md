@@ -521,3 +521,69 @@ no tiles, no arches, no round bricks. A LEGO roof is made of 45-degree slope
 bricks and ours is made of boxes, which is the remaining half of "mega blocks".
 That is content work across every prop in `prop_builder.gd`, not a material
 change, and it is the next thing.
+
+---
+
+## 2026-09-10 — The character, measured against the demo
+
+Goal restated by the user: *"I want people to think, wow I didn't know they made
+a LEGO Twister game."* So the demo is the reference, not our previous build.
+
+### Two numbers, both of them the Roblox tell
+
+Captured close reference of the demo's Indy and measured our figure against
+canonical minifig dimensions in the same millimetres the bricks already use.
+
+- **Ours was 2.91 brick-heights tall. A minifig is 4.17.** 30% short - or, put
+  the other way, our bricks were 43% oversized relative to the figure. That is
+  most of the "mega blocks" read: chunky bricks beside a stumpy figure.
+- **Its head was half the size it should be.** Head-to-torso width was 0.39
+  where a minifig is 0.75. A small head on a short body is the Roblox
+  silhouette exactly; a minifig is short-legged with a BIG head.
+
+Both are now built from the canonical figures - legs 17.6mm, torso 15.4mm,
+head 9.6mm tall and 12mm across, arms outside the torso - converted once from
+`STUD / 8.0`.
+
+### The face is printed, not modelled
+
+Built as geometry the features floated off a curved surface, cast their own
+little shadows and poked past the head's silhouette. The demo's face is
+pad-printed and perfectly flat. Ours is now a generated texture: brows with
+lifted outer ends, small eyes with a pupil highlight, a mouth curve, and
+stubble. **Brows are what carry the expression** - the demo's Indy is brows
+first, and without them a minifig looks vacant.
+
+The texture is laid out in real minifig millimetres rather than pixels, so it
+stays correct if the head is ever resized.
+
+### This cost far more than it should have
+
+The face wrap took six wrong turns: it printed on the back of the head, then
+inside-out, then compressed into a sliver at the centre, twice. Throughout,
+**the per-vertex UV dump looked correct** - u ran 0.5 at the front, linearly to
+1.0 at the back - because the error was in how the range wrapped BETWEEN
+vertices, not in any single value. Numeric dumps could not see it.
+
+What settled it in one render was a **banded diagnostic texture**: eight
+coloured stripes across u, applied to the head. The bands showed instantly that
+u ran backwards and that the seam sat dead ahead. That is the technique to
+reach for first next time a texture maps wrongly, before any dump.
+
+The wrap is now computed from the vertex position in a shader rather than
+authored on the mesh, so the whole class of bug is gone. The half-turn offset
+was then set empirically from the band test rather than reasoned about, and the
+reasoning that said otherwise is not trusted.
+
+Also recorded: flipping the head's facing by one sign inverted every triangle
+and turned it inside out - the identical mistake already written down for the
+brick mesh, made a second time. Both meshes now derive winding from the normal.
+
+### Not done
+
+- **Torso printing.** The demo's Indy has a jacket, a shirt and a satchel strap
+  printed on the torso. Ours is flat colour. This is the single biggest
+  remaining gap on the character.
+- The hair still shows a band across the forehead where its underside meets the
+  head.
+- Buildings are untouched: still rectangular boxes, no slopes or tiles.
