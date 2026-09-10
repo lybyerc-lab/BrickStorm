@@ -169,7 +169,19 @@ func _setup_environment() -> void:
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# Energy is the one global dimmer over every ambient-lit surface, which is
 	# what TT drive with sceneAmbientColor.a when a level goes indoors.
-	env.ambient_light_energy = 2.6
+	env.ambient_light_energy = 0.75
+
+	# A TONEMAPPER, because without one Godot is linear and everything above
+	# 1.0 simply flatlines. Measured against the demo: 97.5% of our minifig's
+	# head was clipped to pure white with a tonal spread of 2.1%, where the
+	# demo's face clips 0.0% and spreads 20.9%. The model was never the
+	# problem - the exposure was, and a flat blown-out surface is exactly what
+	# reads as a toy rather than a photographed model.
+	# ACES rolls the highlights off instead of cutting them, so a bright yellow
+	# head keeps its shading; tonemap_white sets how much headroom there is
+	# above 1.0 before anything is lost at all.
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_white = 1.6
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.66, 0.65, 0.46)
 	env.fog_density = 0.0009
@@ -179,7 +191,7 @@ func _setup_environment() -> void:
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-46, 38, 0)
-	sun.light_energy = 1.45
+	sun.light_energy = 0.35
 	sun.light_color = Color(1.0, 0.96, 0.88)
 	sun.shadow_enabled = true
 	add_child(sun)

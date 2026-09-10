@@ -587,3 +587,60 @@ brick mesh, made a second time. Both meshes now derive winding from the normal.
 - The hair still shows a band across the forehead where its underside meets the
   head.
 - Buildings are untouched: still rectangular boxes, no slopes or tiles.
+
+---
+
+## 2026-09-10 — The render was blown out, and the metric that found it was nearly wrong too
+
+The user compared our minifig against the demo reference and said it was "way
+off". It was, and the cause was not the model.
+
+### Measured
+
+Isolating the head in each image and comparing:
+
+| | ours | demo |
+|---|---|---|
+| clipped to pure white | **97.5%** | **0.0%** |
+| tonal spread across the face | 2.1% | 20.9% |
+
+Ninety-seven per cent of the head was sitting at clipping. There was no shading
+on it at all - a flat blown-out yellow where the demo's face has a full falloff.
+A surface with no tonal range reads as a toy rather than as a photographed
+model, and no amount of work on the geometry would have fixed it.
+
+Two causes: **no tonemapper** (Godot defaults to linear, so everything above
+1.0 simply flatlines) and **the sun was about four times too strong** - 1.45,
+on a palette whose brightest albedos are 0.94-0.96. Now: ACES tonemapping,
+sun 0.35, ambient 0.75.
+
+Whole-frame targets taken from the demo's own daylight scenes for reference:
+Cairo street sits at median 122, p95 175, 0.00% clipped. Ours reaches p95 193
+with 0.1% clipped; our median is lower because our sky and baseplate are their
+own colours rather than because of the lights.
+
+### The instrument was wrong twice before it was right
+
+Worth recording, because the wrong numbers were convincing:
+
+1. **A byte-for-byte comparison of the two PNGs returned 0.41% matching.** That
+   is what two unrelated files score - PNG is DEFLATE-compressed, so byte
+   identity measures nothing about the image.
+2. **The first head mask thresholded on BRIGHTNESS.** So when the lights were
+   dimmed the mask simply selected fewer, brighter pixels and every statistic
+   stayed pinned - halving the sun "changed nothing", which is impossible. The
+   mask now selects by hue, and a mask image is dumped and looked at before any
+   number from it is believed.
+3. **The second mask admitted the green baseplate** (green also has r > b) and
+   inflated the sample to 92% of the crop.
+
+### And the final numbers are noisy
+
+The same settings measured 0.0% clipped on one run and 10.4% on the next,
+because captures are seeded for world LAYOUT but physics still diverges, so the
+figure stands somewhere different and catches the sun differently. Run-to-run
+variance on head clipping is around ten percentage points.
+
+So: the move from 97% to under 10% is real and far outside the noise. The
+difference between 0% and 10% is not, and the last few calibration passes were
+fitting noise. Recorded rather than presented as precision.
