@@ -7,11 +7,52 @@
 class_name StudField
 extends Node3D
 
-signal collected(value: int, band: int, at: Vector3)
+signal collected(value: int, band: int, at: Vector3, denom: int)
 
 const MAX_STUDS := 240
-const BASE_VALUE := 10
 const PICKUP_DIST := 1.05
+
+
+# ============================================================================
+# [BS:ECONOMY:DENOMINATION]
+# Purpose: Studs come in sizes, and the big ones mean something.
+# Invariants:
+# - SILVER IS THE COMMON ONE, as it is in the LEGO games. Every payout in this
+#   game used to be base ten times the band, and a 200-second round logged
+#   roughly 370 near-identical +10/+20/+30 events. The playtest note was that
+#   the stud stream had no texture: no jackpots, no surprises, nothing worth
+#   crossing a room for. See Docs/PLAYTEST_VS_LEGO_INDY.md finding 4.
+# - A BIG STUD IS EARNED, NOT ROLLED. Gold and blue are not a random weight on
+#   rubble - they are dropped when a structure is finished off, so a jackpot has
+#   a LOCATION and the reward is for completing a smash rather than starting
+#   one. A random roll would have added variance without adding a decision.
+# - DENOMINATION MULTIPLIES WITH THE BAND, it does not replace it. The band
+#   multiplier at the moment of collection is still the whole game
+#   (BS:ECONOMY:STUD_VALUE), so a gold stud sitting inside the red band is
+#   worth going in for.
+# - Size on screen follows value. A jackpot the player cannot pick out of a
+#   field of silver is not a jackpot.
+# ============================================================================
+const VALUE_SILVER := 10
+const VALUE_GOLD := 100
+const VALUE_BLUE := 1000
+
+
+static func denom_colour(denom: int) -> Color:
+	if denom >= VALUE_BLUE:
+		return Color(0.30, 0.55, 0.92)
+	if denom >= VALUE_GOLD:
+		return Color(0.98, 0.78, 0.18)
+	return Color(0.78, 0.80, 0.82)
+
+
+static func denom_scale(denom: int) -> float:
+	if denom >= VALUE_BLUE:
+		return 1.9
+	if denom >= VALUE_GOLD:
+		return 1.4
+	return 1.0
+# [BS:ECONOMY:DENOMINATION:END]
 
 var studs: Array = []
 
@@ -27,21 +68,23 @@ var studs: Array = []
 # - Studs are deliberately not physics bodies - a few hundred
 #   RigidBody3D studs would eat a phone alive.
 # ============================================================================
-func spawn_burst(at: Vector3, count: int, colour: Color = BrickLib.C_YELLOW) -> void:
+func spawn_burst(at: Vector3, count: int, denom: int = VALUE_SILVER) -> void:
 	for i in range(count):
 		# At the cap, retire the OLDEST stud rather than refusing the new one.
 		# Refusing starves the field: every stud ends up stranded behind the
 		# storm and the player walks through an empty world.
 		while studs.size() >= MAX_STUDS:
 			_retire_oldest()
-		var n := BrickLib.stud_visual(colour)
+		var n := BrickLib.stud_visual(denom_colour(denom))
 		add_child(n)
+		n.scale = Vector3.ONE * denom_scale(denom)
 		n.global_position = at + Vector3(randf_range(-0.4, 0.4), 0.3, randf_range(-0.4, 0.4))
 		studs.append({
 			"node": n,
 			"vel": Vector3(randf_range(-3.2, 3.2), randf_range(3.0, 6.5), randf_range(-3.2, 3.2)),
 			"settled": false,
 			"spin": randf_range(2.0, 4.5),
+			"denom": denom,
 		})
 # [BS:ECONOMY:STUD_RECYCLING:END]
 
@@ -93,8 +136,9 @@ func _process(delta: float) -> void:
 				s["settled"] = true
 			if d < PICKUP_DIST:
 				var band: int = tor.band_of(ppos) if tor != null else 0
-				var value: int = BASE_VALUE * Tornado.band_multiplier(band)
-				collected.emit(value, band, n.global_position)
+				var denom: int = int(s.get("denom", VALUE_SILVER))
+				var value: int = denom * Tornado.band_multiplier(band)
+				collected.emit(value, band, n.global_position, denom)
 				n.queue_free()
 				studs.remove_at(i)
 		i -= 1

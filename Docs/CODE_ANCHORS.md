@@ -138,8 +138,11 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 ### World
 
+- `[BS:ECONOMY:DENOMINATION]` — `scripts/stud_field.gd` — silver, gold and blue, and why a big stud is earned rather than rolled
+- `[BS:ECONOMY:FINISH_BONUS]` — `scripts/main.gd` — finishing a structure drops a big stud where it stood
+
 - `[BS:RENDER:FACE]` — `shaders/face.gdshader` — the face wrap computed from position, and why it is not authored on the mesh
-- `[BS:RENDER:BASEPLATE]` — `shaders/baseplate.gdshader` — the ground is a baseplate, and why its studs are shaded rather than modelled
+- `[BS:RENDER:GROUND]` — `shaders/ground.gdshader` — the ground is textured earth, not a baseplate, and why that is the point
 - `[BS:BUILD:TORSO]` — `scripts/brick_lib.gd` — one tapered torso part, and why its print is ink-line artwork
 - `[BS:RENDER:TORSO]` — `shaders/torso.gdshader` — printing the front face, selected by the local normal
 - `[BS:BUILD:FACE]` — `scripts/brick_lib.gd` — the face is printed, not modelled, and why brows carry it

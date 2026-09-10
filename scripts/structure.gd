@@ -239,6 +239,12 @@ const HEAVY_STRENGTH := 2.0
 # [BS:CONTENT:ABILITY_GATE:END]
 
 
+# Set once, when this structure has paid out its finish bonus. A structure can
+# cross the rubble threshold on any tear from any source, and the bonus must
+# land exactly once - see BS:ECONOMY:FINISH_BONUS.
+var paid_finish: bool = false
+
+
 func is_rubble() -> bool:
 	return entries.is_empty() or float(torn_count) / float(entries.size()) > 0.55
 

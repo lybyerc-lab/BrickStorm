@@ -11,6 +11,18 @@ const TRUE_CHASER := 9000
 const MAX_LOOSE := 110
 const TEAR_BUDGET := 5
 const BRICK_LIFETIME := 6.0
+# How long a brick the player knocked loose flies before it becomes studs.
+# Long enough to see it come off, short enough that the payout belongs to
+# the hit that caused it.
+const PLAYER_BRICK_LIFETIME := 0.55
+# Below this many parts, finishing a structure pays nothing extra. Measured:
+# without a floor the funnel finished 92-97 structures a round - one every two
+# seconds - because it eats every mailbox, bin and crate in the corridor. A
+# jackpot arriving every two seconds is a stream, not a jackpot. Furniture runs
+# 4-10 parts, a windmill 11, a pickup 10; a fence run is 23 and a silo 23.
+const FINISH_MIN_PARTS := 20
+# And this many or more pays BLUE rather than gold. Barn 154, farmhouse 117.
+const BIG_STRUCTURE := 100
 const BUILD_TIME := 2.4
 const FUNNEL_CLEARANCE := 15.0
 
@@ -215,9 +227,13 @@ func _build_ground() -> void:
 	body.add_child(cs)
 	add_child(body)
 
-	# The ground is a BASEPLATE. It was a smooth plane, and a world where
-	# nothing the bricks stand on is itself a brick reads as a game with blocks
-	# in it rather than as a LEGO game. See shaders/baseplate.gdshader.
+	# The ground is TEXTURED EARTH, not a baseplate. It was a 420m studded
+	# plate on the theory that a world where nothing the bricks stand on is
+	# itself a brick reads as blocks rather than as LEGO. Measurement said the
+	# opposite: with the ground plastic too, nothing was left for the plastic to
+	# read AGAINST, and half of every frame was a single flat saturated green.
+	# Pillar 1 now draws the line at smashability, and the ground does not
+	# break. See shaders/ground.gdshader and Docs/NORTH_STAR.md.
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(420, 420)
 	pm.subdivide_width = 4
@@ -225,10 +241,7 @@ func _build_ground() -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
 	var gm := ShaderMaterial.new()
-	gm.shader = load("res://shaders/baseplate.gdshader")
-	gm.set_shader_parameter("base_color", Color(0.42, 0.58, 0.26))
-	gm.set_shader_parameter("stud_pitch", BrickLib.STUD)
-	gm.set_shader_parameter("stud_radius", BrickLib.STUD_R)
+	gm.shader = load("res://shaders/ground.gdshader")
 	mi.material_override = gm
 	add_child(mi)
 
@@ -239,10 +252,12 @@ func _build_ground() -> void:
 		q.size = Vector2(w, randf_range(18.0, 34.0))
 		var m := MeshInstance3D.new()
 		m.mesh = q
+		# Earthier than they were. These are terrain, and terrain gives its
+		# saturation up to the plastic (pillar 2, clarified 2026-09-10).
 		var tone := randf_range(-0.05, 0.08)
-		var base := Color(0.44 + tone, 0.46 + tone, 0.20 + tone * 0.5)
+		var base := Color(0.42 + tone, 0.45 + tone, 0.30 + tone * 0.5)
 		if i % 3 == 0:
-			base = Color(0.62 + tone, 0.55 + tone, 0.28)
+			base = Color(0.56 + tone, 0.53 + tone, 0.40)
 		m.material_override = BrickLib.terrain_mat(base)
 		m.position = Vector3(randf_range(-150, 150), 0.02 + float(i) * 0.002, randf_range(-150, 150))
 		add_child(m)
@@ -1001,8 +1016,9 @@ func _do_smash() -> void:
 		for b in bodies:
 			var away: Vector3 = (b.global_position - p).normalized()
 			b.apply_central_impulse((away + Vector3.UP * 0.9) * 6.5 * b.mass)
-			debris.append({"body": b, "age": 0.0})
+			debris.append({"body": b, "age": 0.0, "by_player": true})
 		hit += bodies.size()
+		_pay_finish(st)
 	if hit > 0:
 		_log_event("SMASH", "bricks=%d" % hit)
 		comedy.smash(p + Vector3(0, 1.6, 0))
@@ -1051,7 +1067,9 @@ func _on_vehicle_ram(st: Node, at: Vector3, force: float) -> void:
 	for b in bodies:
 		var away: Vector3 = (b.global_position - at).normalized()
 		b.apply_central_impulse((away + Vector3.UP * 0.7) * force * 0.9 * b.mass)
-		debris.append({"body": b, "age": 0.0})
+		# The truck is the player. A ram is a player verb and pays like one.
+		debris.append({"body": b, "age": 0.0, "by_player": true})
+	_pay_finish(structure)
 	if bodies.size() > 0:
 		_log_event("RAM", "bricks=%d force=%.0f" % [bodies.size(), force])
 		comedy.ram(at + Vector3(0, 1.4, 0))
@@ -1168,6 +1186,47 @@ func _tear_with_funnel() -> void:
 			var tangent := Vector3(-out.z, 0.0, out.x).normalized()
 			b.apply_central_impulse((tangent * 6.0 + Vector3.UP * 5.0) * b.mass)
 			debris.append({"body": b, "age": 0.0})
+		_pay_finish(s)
+
+
+# ============================================================================
+# [BS:ECONOMY:FINISH_BONUS]
+# Purpose: Finishing a structure off drops a big stud where it stood.
+# Invariants:
+# - PAID EXACTLY ONCE per structure, whoever finished it. A structure crosses
+#   the rubble threshold on some particular tear, and that tear can come from
+#   the player, a truck or the funnel; `paid_finish` is the latch.
+# - THE BONUS IS A STUD ON THE GROUND, NOT SCORE. It has to be collected, so
+#   a jackpot that drops inside the red band is a decision - go in and get it,
+#   at up to five times the value, or leave it. Awarding score directly would
+#   hand the money over for free and cut the risk gradient out of the reward.
+# - This is the answer to the flat stud stream: a payout the player can SEE
+#   coming, in a place, for having completed something. See
+#   Docs/PLAYTEST_VS_LEGO_INDY.md finding 4, and BS:ECONOMY:DENOMINATION.
+# - It rewards FINISHING. Half-smashing six props used to pay exactly as well
+#   as levelling one, which is why the round played as grazing rather than as
+#   destroying things.
+# ============================================================================
+func _pay_finish(st: Structure) -> void:
+	if st == null or st.paid_finish or not st.is_rubble():
+		return
+	st.paid_finish = true
+	# Small scenery pays in ordinary studs like everything else. It still
+	# breaks, it still pays, it just does not throw a jackpot for a bin.
+	if st.entries.size() < FINISH_MIN_PARTS:
+		return
+	var big: bool = st.entries.size() >= BIG_STRUCTURE
+	var denom: int = StudField.VALUE_BLUE if big else StudField.VALUE_GOLD
+	var at := st.global_position + Vector3(0, 1.2, 0)
+	studfield.spawn_burst(at, 1, denom)
+	# Only a building announces itself as it goes. The gold stud is its own
+	# signal, and collecting it already pops; a comic word on every finish as
+	# well was most of the noise.
+	if big:
+		comedy.pop(at + Vector3(0, 1.0, 0), "WRECKED!",
+			StudField.denom_colour(denom), 130)
+	_log_event("FINISH", "%s parts=%d" % ["blue" if big else "gold", st.entries.size()])
+# [BS:ECONOMY:FINISH_BONUS:END]
 
 
 # A loose brick lives briefly, then bursts into the studs it is worth.
@@ -1191,7 +1250,15 @@ func _age_debris(delta: float) -> void:
 			continue
 		d["age"] += delta
 		var over := debris.size() > MAX_LOOSE and i < debris.size() - MAX_LOOSE
-		if d["age"] > BRICK_LIFETIME or b.global_position.y < -8.0 or over:
+		# A brick the PLAYER knocked loose pays almost at once. Everything used
+		# to sit for BRICK_LIFETIME - six seconds - before becoming studs, so
+		# the reward for smashing arrived long after the smash and the loop
+		# never closed. In a LEGO game you hit a thing and the studs come out
+		# of it; that is the whole feedback loop, and six seconds is not it.
+		# The funnel keeps the long lifetime: its debris is meant to fly, and
+		# the flight IS the spectacle.
+		var life: float = PLAYER_BRICK_LIFETIME if d.get("by_player", false) else BRICK_LIFETIME
+		if d["age"] > life or b.global_position.y < -8.0 or over:
 			var at := b.global_position
 			at.y = maxf(at.y, 0.3)
 			studfield.spawn_burst(at, randi_range(1, 3))
@@ -1222,10 +1289,20 @@ func _check_lift() -> void:
 # - Any future award, rating or unlock added here latches the same way. If it
 #   can be lost, it is not a threshold, it is a punishment.
 # ============================================================================
-func _on_stud_collected(value: int, _band: int, at: Vector3) -> void:
+func _on_stud_collected(value: int, _band: int, at: Vector3, denom: int = 10) -> void:
 	score += value
 	_log_event("STUD", "+%d total=%d" % [value, score])
 	audio.stud(at)
+	# A jackpot has to READ as one. A silver stud is a tick; a gold or blue is
+	# an event, and gets the comic-book treatment every other event gets.
+	if denom >= StudField.VALUE_BLUE:
+		comedy.pop(at + Vector3(0, 1.9, 0), "JACKPOT!", Color(0.55, 0.75, 1.0), 150)
+		hud.toast("BLUE STUD  +%s" % HUD._commas(value), Color(0.55, 0.75, 1.0))
+		_log_event("JACKPOT", "blue +%d" % value)
+	elif denom >= StudField.VALUE_GOLD:
+		comedy.pop(at + Vector3(0, 1.6, 0), "NICE!", Color(1.0, 0.85, 0.25), 120)
+		hud.toast("GOLD STUD  +%s" % HUD._commas(value), Color(1.0, 0.85, 0.25))
+		_log_event("GOLD", "+%d" % value)
 	if score >= TRUE_CHASER:
 		if not true_chaser_earned:
 			true_chaser_earned = true
@@ -2106,6 +2183,94 @@ func _run_selftest() -> void:
 			fails.append("prop '%s' uses %d part kinds - that is %d draw calls per"
 				% [prop_name, used.size(), used.size() + 1] + " instance")
 		ps.free()
+
+	# --- 4b4. the stud stream has denominations, and finishing pays -------
+	# Every payout in this game used to be ten times the band multiplier, so a
+	# 200-second round logged ~370 near-identical events and the stud stream had
+	# no texture at all. These check the two halves of the fix: that a
+	# denomination survives from spawn to collection, and that the finish bonus
+	# lands exactly once per structure however it was finished.
+	#
+	# ON A THROWAWAY FIELD, NOT THE LIVE ONE. The first version of this gate
+	# spawned test studs into the running game's StudField and then called
+	# clear_all(), which wiped the player's uncollected loot mid-round - the
+	# summary line went from 240 studs to 53 and still said OK. That is the
+	# same mistake as the re-homing check that once emptied the live town, and
+	# it is recorded in Docs/DECISION_LOG.md for the same reason: a test that
+	# damages the thing it is measuring can pass while breaking the game.
+	var live_field := studfield
+	var probe_field := StudField.new()
+	add_child(probe_field)
+	studfield = probe_field
+	for denom in [StudField.VALUE_SILVER, StudField.VALUE_GOLD, StudField.VALUE_BLUE]:
+		probe_field.spawn_burst(Vector3(600, 0.5, 0), 1, denom)
+		var made: Dictionary = probe_field.studs[probe_field.studs.size() - 1]
+		if int(made.get("denom", -1)) != denom:
+			fails.append("a %d stud came back carrying denom %s - the value is"
+				% [denom, str(made.get("denom", "none"))] + " lost before collection")
+		# A jackpot the player cannot pick out of a field of silver is not a
+		# jackpot, so size and colour have to differ too.
+		if denom > StudField.VALUE_SILVER:
+			if StudField.denom_scale(denom) <= StudField.denom_scale(StudField.VALUE_SILVER):
+				fails.append("a %d stud is not bigger than a silver one" % denom)
+			if StudField.denom_colour(denom).is_equal_approx(
+					StudField.denom_colour(StudField.VALUE_SILVER)):
+				fails.append("a %d stud is the same colour as a silver one" % denom)
+	probe_field.clear_all()
+
+	# The finish bonus: once per structure, and only once it is actually rubble.
+	# The structure is parented directly rather than through _add_structure, so
+	# it never joins the live corridor.
+	# A fence run is 23 parts, so it clears FINISH_MIN_PARTS but not
+	# BIG_STRUCTURE - the gold case.
+	var fin := PropBuilder.fence_run(Vector3(620, 0, 0), Vector3(628, 0, 0))
+	add_child(fin)
+	_pay_finish(fin)
+	if not probe_field.studs.is_empty():
+		fails.append("the finish bonus paid on an intact structure")
+	probe_field.clear_all()
+	while not fin.is_rubble():
+		if fin.tear(fin.global_position + Vector3(0, 0.6, 0), 6.0, debris_root, 40).is_empty():
+			break
+	_pay_finish(fin)
+	var after_first := probe_field.studs.size()
+	_pay_finish(fin)
+	_pay_finish(fin)
+	if after_first != 1:
+		fails.append("finishing a structure paid %d studs, expected 1" % after_first)
+	elif probe_field.studs.size() != 1:
+		fails.append("the finish bonus paid %d times for one structure - the"
+			% probe_field.studs.size() + " paid_finish latch is not holding")
+	elif int((probe_field.studs[0] as Dictionary).get("denom", 0)) != StudField.VALUE_GOLD:
+		fails.append("a mid-sized structure paid %s instead of gold"
+			% str((probe_field.studs[0] as Dictionary).get("denom", 0)))
+	probe_field.clear_all()
+
+	# And scenery below the floor pays nothing extra at all, or the jackpot is
+	# not a jackpot - this is what 92 finishes a round looked like.
+	var small := PropBuilder.bin(Vector3(640, 0, 0))
+	add_child(small)
+	while not small.is_rubble():
+		if small.tear(small.global_position + Vector3(0, 0.5, 0), 6.0, debris_root, 40).is_empty():
+			break
+	_pay_finish(small)
+	if not probe_field.studs.is_empty():
+		fails.append("a %d-part prop paid a finish bonus; the floor is %d parts"
+			% [small.entries.size(), FINISH_MIN_PARTS])
+	probe_field.clear_all()
+	small.queue_free()
+	studfield = live_field
+	fin.queue_free()
+	probe_field.queue_free()
+
+	# A brick the player knocked loose has to pay sooner than one the funnel
+	# threw, or the reward does not belong to the hit that caused it. The
+	# behavioural half of this is visible in --playthrough's STUD timings; what
+	# is checkable here is that the two lifetimes have not been equalised.
+	if PLAYER_BRICK_LIFETIME >= BRICK_LIFETIME:
+		fails.append("player debris lives %.2fs against the funnel's %.2fs - the"
+			% [PLAYER_BRICK_LIFETIME, BRICK_LIFETIME]
+			+ " smash no longer pays before the storm does")
 
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game

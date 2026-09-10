@@ -42,17 +42,50 @@ storm, the design has drifted.**
 
 ## Visual and design pillars
 
-### 1. True brick construction
+### 1. True brick construction — for everything that breaks
 
-Everything in the world is built from real brick shapes at a real stud pitch,
-with studs visible on top surfaces. If it cannot be built from parts, it is not
-in the game. The one deliberate exception is the funnel itself (pillar 3).
+*Revised 2026-09-10 by director decision. See `Docs/DECISION_LOG.md`.*
+
+**If it is smashable, it is built from real brick shapes at a real stud pitch,
+with studs visible on top surfaces. If it is not smashable, it does not have to
+be a brick at all.**
+
+That line is the pillar. Terrain, ground, distant scenery, cliffs and any fixed
+backdrop are free to be sculpted, textured meshes. Buildings, props, vehicles,
+furniture and anything the player or the funnel can take apart are brick-built,
+because a thing that comes apart has to come apart *into parts*.
+
+The reason is measured, not stylistic. In LEGO Indiana Jones the environment is
+mostly **not** plastic — sculpted rock, plaster walls, cobbled streets — and the
+minifigs, vehicles and destructibles read as moulded plastic precisely because
+they sit against something that is not. LEGO is a **figure-ground relationship**
+there. This project made everything plastic, including a studded baseplate for
+ground, so nothing had anything to read against: our surfaces measure 23-29%
+flat single-tone tiles against the demo's 12.5-18%, and the plastic stopped
+signifying. See `Docs/PLAYTEST_VS_LEGO_INDY.md`.
+
+The earlier wording — "everything in the world is built from real brick shapes;
+if it cannot be built from parts, it is not in the game" — is superseded. The
+funnel remains a deliberate exception for its own reasons (pillar 3).
 
 ### 2. The world stays cheerful; the sky carries the dread
 
-The ground-level palette stays bright and saturated — classic brick colours,
-flat-leaning shading. The sky goes green-black. That contrast **is** the visual
-identity. Darkening the world to signal danger destroys it and is forbidden.
+*Clarified 2026-09-10 by director decision.*
+
+The ground-level palette stays cheerful — classic brick colours, flat-leaning
+shading. The sky goes green-black. That contrast **is** the visual identity.
+Darkening the world to signal danger destroys it and is forbidden.
+
+**Saturation belongs to the PLASTIC, not to the terrain.** Bricks stay punchy;
+ground, terrain and sky sit lower and earthier so the bricks have something to
+be bright against. Measured, our frames came in at 0.71-0.76 mean saturation
+against 0.21-0.46 for the demo's daylight exteriors — the world was competing
+with its own bricks. Pulling the terrain toward roughly 0.5 while leaving brick
+colours alone serves this pillar rather than breaking it: the world reads
+cheerful *because* the plastic is bright, not because every pixel is.
+
+This is not permission to darken the world. Value stays high; only the terrain's
+colourfulness comes down.
 
 ### 3. The funnel reads as a force, not an object
 

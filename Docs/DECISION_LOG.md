@@ -863,3 +863,152 @@ as an open shell. That was the test being wrong, not the mesh.
   because North Star pillar 1 says everything in the world is built from real
   brick shapes and that pillar changes only by director decision. Worth
   deciding explicitly rather than by default.
+
+---
+
+## 2026-09-10 (later) — Director decisions: the hybrid, saturation, and the loop
+
+Three decisions came back from the director, and two of them change a pillar.
+
+### Pillar 1 is amended: the line is smashability
+
+> *"Only environment that's supposed to be smashable needs to be Lego, anything
+> else doesn't need to be. The hybrid system will work great here."*
+
+`Docs/NORTH_STAR.md` pillar 1 previously read "everything in the world is built
+from real brick shapes; if it cannot be built from parts, it is not in the
+game." It now reads: **if it is smashable it is brick-built; if it is not, it
+does not have to be a brick at all.**
+
+The evidence for asking was measured, not stylistic. In the demo, LEGO is a
+**figure-ground relationship** — minifigs, vehicles and destructibles read as
+moulded plastic because they sit against sculpted rock, plaster and cobbles that
+are not plastic. This project had made everything plastic, ground included, so
+nothing had anything to read against.
+
+**The first thing to go is the studded baseplate.** A 420m plate of shaded studs
+was half of every frame, and it was added on exactly the theory the director has
+now overturned. `shaders/ground.gdshader` replaces it with textured earth:
+three-octave value noise, no texture asset, patches at field scale, mottling at
+metre scale, and a fine grain that fades out before it can shimmer.
+
+### Pillar 2 is clarified: saturation belongs to the plastic
+
+Bricks stay punchy; ground, terrain and sky come down so the bricks have
+something to be bright against. This is explicitly **not** permission to darken
+the world, and the first attempt broke exactly that rule — see below.
+
+### Two instrument lessons, both caught by measuring
+
+**The studded baseplate was carrying our detail score.** Removing it sent flat
+8x8 tiles from 22.7% to **57.0%** — far worse than before. The stud grid had
+been supplying the high-frequency variation the metric counts. That is a real
+limitation of the measure: *a repeating geometric pattern is not surface
+texture*, and the demo's 12.5% comes from irregular material detail while our
+old 22.7% came from a stamped grid. The metric still usefully answers "is this
+surface one flat tone", but it cannot tell plastic studs from plaster.
+
+**Desaturating by lowering value is darkening.** The first ground pass took the
+frame median from 93 to 66, which is the one thing pillar 2 forbids in as many
+words. Two causes: albedo pulled down along with saturation, and — less
+obviously — specular dropped 0.35 to 0.12 with roughness pushed 0.62 to 0.78,
+which took a surprising amount of light out of half the frame on its own.
+
+After correcting both, on the **set-piece yard**, which is a fixed camera at a
+fixed place and therefore the only frame comparable between runs:
+
+| | before the ground change | after |
+|---|---|---|
+| median luma | 112.8 | **110.0** |
+| mean saturation | 0.706 | **0.569** |
+| flat 8x8 tiles | 24.6% | **8.7%** |
+| detail | 11.66 | 9.58 |
+
+Same brightness, less saturated, and flatter-than-the-demo turned into
+better-than-the-demo. The demo's daylight exteriors sit at 12.5-18.2% flat.
+
+**The gameplay frame is not a controlled measurement** and should not be read as
+one: `world.png` is grabbed wherever the autopilot happens to be at t=29, and
+across three runs it has framed three different places. The set-piece yard is
+the controlled one.
+
+### The loop
+
+The playtest's finding 3 was that 96% of everything happening to the player is
+passive collection, and finding 4 was that there is only one denomination.
+Both are now addressed, and neither by adding a new verb.
+
+**Studs already came from destruction** — a torn brick becomes debris, and
+debris becomes studs when it ages out. The problem was that `BRICK_LIFETIME` is
+six seconds, so the reward for a smash arrived long after the smash. Debris the
+player knocked loose now lives `PLAYER_BRICK_LIFETIME` — 0.55s — so the payout
+belongs to the hit that caused it. The funnel keeps the long lifetime, because
+its debris is meant to fly and the flight is the spectacle.
+
+**Denominations are silver 10 / gold 100 / blue 1000**, silver common as in the
+LEGO games, with size and colour following value so a jackpot can be picked out
+of a field of silver. Denomination *multiplies* with the band at collection, so
+`BS:ECONOMY:STUD_VALUE`'s invariant is intact and a gold stud sitting in the red
+band is worth going in for.
+
+**A big stud is earned, not rolled.** Gold and blue are not a random weight on
+rubble — they drop when a structure is *finished off* (`BS:ECONOMY:FINISH_BONUS`),
+so a jackpot has a location and the reward is for completing a smash rather than
+starting one. Half-smashing six props used to pay exactly as well as levelling
+one, which is why the round played as grazing. Blue for a building (50+ parts),
+gold for anything else, paid once per structure whoever finished it.
+
+The bonus is a **stud on the ground, not score**: it has to be collected, so a
+jackpot dropping inside the red band is a decision rather than a gift.
+
+### Gates, each proven to fail
+
+- denomination dropped on spawn -> "a 100 stud came back carrying denom 10"
+- the `paid_finish` latch removed -> "paid 3 times for one structure"
+- player debris lifetime equalised -> "the smash no longer pays before the storm"
+- gold sized like silver -> "a 100 stud is not bigger than a silver one"
+
+One correction to the gate itself on the way, and it is the same mistake this
+log already records once: the first version spawned its test studs into the
+**live** StudField and then called `clear_all()`, wiping the player's
+uncollected loot mid-round. The summary line went from 240 studs to 53 and still
+said OK. It now runs against a throwaway field and a structure that never joins
+the corridor.
+
+### Measured, four rounds at each setting
+
+| | before the loop work | finish bonus unrestricted | restricted (shipping) |
+|---|---|---|---|
+| final score | 1,495 – 2,622 | 3,406 – 6,470 | **1,545 – 2,638** |
+| TRUE CHASER earned | never | **all four rounds** | never |
+| gold studs collected | 0 | 51 – 61 | **3 – 6** |
+| blue jackpots | 0 | 1 – 2 | **0 – 1** |
+| finish bonuses paid | 0 | 92 – 97 | **14** |
+| SMASH / min | 5.4 – 11.4 | 2.4 – 5.7 | 5.4 – 12.3 |
+| longest silence | 6.1 – 30.3 s | 4.1 – 5.8 s | 10.0 – 17.6 s |
+
+**What landed.** The stud stream has texture: three to six gold and up to one
+blue per round, uncommon enough to be worth crossing a room for, and they come
+from finishing something rather than from a dice roll. Score is back at the
+pre-change baseline and TRUE CHASER is out of reach again, so the rating did not
+quietly become free.
+
+**What did NOT land, stated plainly because the middle column is a trap.** With
+the bonus unrestricted, dead time looked solved — 4.1 to 5.8 seconds, tight
+across all four rounds, against a 6-to-30-second spread before. It was not
+solved. **That improvement was bought with jackpot spam:** 92 to 97 finish
+bonuses a round is one every 2.2 seconds, and every one of them was a
+player-facing event filling the gaps. Restrict the bonus to things worth
+announcing and the gaps come straight back, 10.0 to 17.6 seconds.
+
+So the six-second payout delay was real and worth fixing, but it was never what
+made the round go quiet. **Dead time is a level-density problem, not a reward-
+timing one.** The evidence is that the gaps recur at the same points: two of the
+four rounds report 17.6 s starting at t=26.5, and the other two report 10-11.7 s
+starting at t≈112. Reproducible timing on an unseeded generator means the storm's
+route puts the player in open ground at those points, and the fix is content
+ahead of the funnel rather than anything to do with studs.
+
+The SMASH/min difference between the middle and right columns is most likely the
+autopilot responding to a changed reward landscape rather than a player-facing
+change, and it should not be read as a result.
