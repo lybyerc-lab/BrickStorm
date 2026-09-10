@@ -16,22 +16,22 @@ The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Re
 
 ## Current sealed baseline
 
-BrickStorm Foundation **0.4.3** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
+BrickStorm Foundation **0.4.4** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
 
-Sealed archive: `brickstorm_foundation_v0_4_3.zip`
+Sealed archive: `brickstorm_foundation_v0_4_4.zip`
 
-SHA-256: `472b63990da14dc1abe7d64ecacf8f373040b35908c995060a9577a3793c1965`
+SHA-256: `f2318818c2c9ae2431b33acaee8df0ddc69a5aacf89ee344239eb6a23939ffdb`
 
 Exact-package verification includes:
 
-- source manifest: **402/402** entries unchanged before and after clean-extracted testing;
+- source manifest: **418/418** entries unchanged after clean-extracted testing;
 - source/static release gate;
-- deep audit: **96 GDScripts / 49 scene-resource files**;
-- **74/74** behavior contracts;
+- deep audit: **99 GDScripts / 51 scenes / 46 global class_name symbols**;
+- **76/76** behavior contracts;
 - strict-parser negative tests: **10/10**;
 - real Godot `4.7.2.stable.official.ed1daf0bf` import/runtime/core/lifecycle/content gates;
-- character LEGO-feel, minifigure silhouette, little-run, and torso-swagger gates;
-- hybrid-building precision fit plus phone-visible roadside/farmhouse nesting coverage;
+- character LEGO-feel and hybrid-building gates;
+- **phone QA lab and runtime telemetry gate**;
 - canonical stud identity;
 - authored opening slice;
 - preserved county-road chase;
@@ -39,58 +39,50 @@ Exact-package verification includes:
 - 600-frame main-scene soak;
 - graphical touch at 1280x720, 1920x1080, and 2400x1080.
 
-The aggregate graphical wrapper reached its environment wall-clock limit after 1280x720. The exact-package 1920x1080 and 2400x1080 stages were rerun directly with Xvfb managed separately; both Godot processes exited 0, printed the required touch PASS marker, and emitted no Godot error markers.
+At 2400x1080, the `xvfb-run` wrapper could hang after the Godot child had already completed. Final release grading used Xvfb managed directly; the Godot process exited 0, printed `BRICKSTORM TOUCH INPUT ENGINE TEST: PASS`, and emitted no engine error markers.
 
 The sealed ZIP stored in the LEGO: Twister Library is the byte authority. The GitHub branch remains a curated implementation/history mirror unless a full-repository mirror is separately verified.
+
+## 0.4.4 phone-first QA layer
+
+The user has no development PC, so BrickStorm's QA workflow must work from the Android build itself rather than assuming access to the Godot desktop editor.
+
+0.4.4 adds:
+
+- a compact in-game **QA** launcher that does not replace or shift the protected movement/action controls;
+- a hidden-by-default **PERF HUD** for live gameplay;
+- a dedicated **QA LABS** scene;
+- real-project MINIFIG, HOUSE, and BUILDABLE benches rather than mock assets;
+- stable visual checkpoint IDs for repeatable screenshots;
+- house opening/receiving-geometry inspection without triggering physics destruction;
+- buildable hopping preview plus real build-sequence triggering;
+- runtime metrics for FPS, frame/process/physics cost, draw and visible-object pressure, active 3D bodies, storm debris, and buildables.
+
+Stable checkpoint IDs include:
+
+- `RUN-3Q-01`, `RUN-SIDE-01`, `RUN-FRONT-01`, `RUN-GAME-01`;
+- `HOUSE-ROAD-FRONT-01`, `HOUSE-ROAD-3Q-01`, `HOUSE-FARM-FRONT-01`, `HOUSE-FARM-3Q-01`;
+- `BUILD-FRONT-01`, `BUILD-3Q-01`, `BUILD-GAME-01`.
+
+This infrastructure is intended to make Android-only visual QA reproducible and shorten the loop between noticing a defect and reproducing it.
 
 ## Physical-phone baseline and demo parity
 
 The user-supplied 2008 classic brick-adventure demo remains the **5/5 measurement stick**. Automated PASS results prove stability and protected behavior, not visual parity.
 
-The most recent completed physical Android playtest is **0.4.2**:
+The most recent completed physical Android full-round rating remains **0.4.2 = 3.8/5**, with the user explicitly saying the round was fun. 0.4.3 corrected the reported torso-swagger and phone-visible house-fit defects but has not yet received a replacement phone score.
 
-- user played a full round;
-- user said **“It’s fun.”**;
-- user-rated overall result: **3.8/5**;
-- remaining observed defects: torso needed more swagger like the shoulders, and some house props were still visibly off.
+0.4.4 is measurement infrastructure. It **does not receive an automatic demo-parity increase**.
 
-0.4.3 was built specifically from those observations. Do not overwrite the 0.4.2 phone score with an automated estimate.
+Current pending-phone working estimates remain:
 
-Current 0.4.3 status pending Android replay:
+- visual parity: approximately **3.8/5**;
+- gameplay parity: approximately **3.4/5**;
+- verdict: **ACCEPT AS FOUNDATION ONLY**.
 
-- visual parity working estimate: approximately **3.8/5**;
-- gameplay parity working estimate: approximately **3.4/5**;
-- verdict: **ACCEPT AS FOUNDATION ONLY, pending physical-phone subjective review**.
-
-Strongest 0.4.3 improvement: the torso now participates as a distinct delayed phase between pelvis lead and shoulder finish, and phone-visible legacy/background house paths are covered by the same fit discipline as Wakita.
-
-Biggest remaining visual giveaway: authored mesh quality, materials, texture/surface richness, prop specificity, and environment dressing remain below the shipped reference.
+Biggest remaining visual giveaway: authored mesh quality, edge treatment, materials/texture richness, prop specificity, lighting composition, and environmental dressing remain below the shipped reference.
 
 Biggest remaining gameplay giveaway: contextual actions, companion/character-role behavior, semantic feedback density, alternate solutions, secrets, and Story/Free Play depth remain below the reference.
-
-## 0.4.3 correction contracts
-
-### Character presentation
-
-Keep one authoritative on-foot motor. Current visible hierarchy:
-
-`travel/root -> pelvis lead -> delayed torso yaw/roll/lateral follow -> broader later shoulder finish -> rigid arm lag -> head settle`
-
-0.4.3 adds independent torso phase/follow behavior rather than asking the shoulders to carry all visible swagger. The narrower 0.4.2 shoulders and little minifigure run/hustle remain protected.
-
-### Phone-visible building fit
-
-Building grammar remains **permanent world shell + LEGO attachment layer**.
-
-0.4.3 extends fit correction beyond the newer Wakita kit:
-
-- legacy `HybridRoadsideHouse` windows/door now seat by visible shell-face depth;
-- its roof mount, pitch, depth, and overhang derive from the receiving shell;
-- its gable fill derives from the same roof run/pitch;
-- `NaturalFarmhouseBackdrop`, which exposed the phone-visible defect, now derives paired roof halves and gable fill together;
-- farmhouse windows and door use recess -> trim -> face layering instead of flat pasted rectangles.
-
-These guarantees are represented by named release contracts, not just screenshot inspection.
 
 ## Protected wins / regression floors
 
@@ -100,6 +92,8 @@ These guarantees are represented by named release contracts, not just screenshot
 - Generator/sensor-cage opening: protected reference slice
 - County-road / production InteractionGraph chase: protected
 - 0.4.2 hopping buildable identification: protected
+- 0.4.3 torso swagger: protected
+- 0.4.3 roadside/farmhouse prop nesting: protected
 - Wakita objective/checkpoint/camera/tornado-route ownership: protected
 - Canonical stud denomination identity and mobile destruction budgets: protected
 
@@ -119,4 +113,4 @@ Every meaningful pass reports:
 
 ## Release discipline
 
-A candidate is not sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and source-manifest hashes remain unchanged after testing. Physical Android remains authoritative for rendering, audio, performance, thermals, thumb feel, torso swagger, prop nesting, and overall classic-LEGO impression.
+A candidate is not sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and source-manifest hashes remain unchanged after testing. Physical Android remains authoritative for rendering, audio, performance, thermals, thumb feel, character swagger, prop nesting, QA usability, and overall classic-LEGO impression.
