@@ -783,17 +783,32 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	var torso_y := hip_y + torso_h * 0.5
 	var head_y := hip_y + torso_h + head_h * 0.45   # the head sits down on the neck
 
+	# THE RIG IS SPLIT AT THE WAIST. Everything below hangs off Pelvis and
+	# everything above off Upper, and the two can be driven against each other.
+	# A minifig cannot bend a knee or an elbow - the parts are rigid - so ALL
+	# of a walk's character comes from WHERE THE MOTION ORIGINATES, and a flat
+	# rig with the torso, the shoulders and the hips as siblings has nothing to
+	# lead from. See BS:PLAYER:GAIT.
+	var pelvis := Node3D.new()
+	pelvis.name = "Pelvis"
+	pelvis.position = Vector3(0, hip_y, 0)
+	root.add_child(pelvis)
+	var upper := Node3D.new()
+	upper.name = "Upper"
+	upper.position = Vector3(0, hip_y, 0)
+	root.add_child(upper)
+
 	# --- legs: a hip block and two legs, short and wide ---------------------
 	var hips := brick_visual(2, 1, leg_h * 0.30, legs, false)
-	hips.position = Vector3(0, hip_y - leg_h * 0.15, 0)
+	hips.position = Vector3(0, -leg_h * 0.15, 0)
 	hips.scale = Vector3(1.0, 1.0, torso_d / STUD)
-	root.add_child(hips)
+	pelvis.add_child(hips)
 
 	for side in [-1.0, 1.0]:
 		var hip := Node3D.new()
 		hip.name = "HipR" if side > 0.0 else "HipL"
-		hip.position = Vector3(side * torso_w * 0.25, hip_y - leg_h * 0.30, 0)
-		root.add_child(hip)
+		hip.position = Vector3(side * torso_w * 0.25, -leg_h * 0.30, 0)
+		pelvis.add_child(hip)
 		var leg := brick_visual(1, 1, leg_h * 0.70, legs, false)
 		leg.position = Vector3(0, -leg_h * 0.35, 0)
 		leg.scale = Vector3(0.92, 1.0, torso_d / STUD)
@@ -814,18 +829,18 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	var torso := MeshInstance3D.new()
 	torso.mesh = torso_mesh()
 	torso.scale = Vector3(torso_w, torso_h, torso_d * 2.0)
-	torso.position = Vector3(0, hip_y + torso_h * 0.5, 0)
+	torso.position = Vector3(0, torso_h * 0.5, 0)
 	torso.name = "Torso"
 	torso.material_override = torso_material(shirt, C_BROWN, C_TAN)
-	root.add_child(torso)
+	upper.add_child(torso)
 
 	# The neck bracket, visible under the chin on the real part.
 	# The neck is a peg the head sits ON, and on the real part you barely see
 	# it. At full width it reads as a skin-coloured collar.
 	var neck := brick_visual(1, 1, 2.4 * mm, skin, false)
-	neck.position = Vector3(0, hip_y + torso_h - 0.4 * mm, 0)
+	neck.position = Vector3(0, torso_h - 0.4 * mm, 0)
 	neck.scale = Vector3(0.40, 1.0, 0.40)
-	root.add_child(neck)
+	upper.add_child(neck)
 
 	# --- arms: hung OUTSIDE the torso, angled out and forward ---------------
 	for side in [-1.0, 1.0]:
@@ -834,17 +849,27 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		# OUTSIDE the torso. At 0.46 of the torso width the arms sat inside its
 		# own footprint and were invisible - the silhouette stopped reading as
 		# a minifig, which is the one thing the arms are for.
-		sh.position = Vector3(side * (torso_w * 0.5 + 1.6 * mm),
-			hip_y + torso_h * 0.80, 0)
-		root.add_child(sh)
-		var a := brick_visual(1, 1, 11.0 * mm, shirt, false)
-		a.position = Vector3(0, -5.5 * mm, 0)
-		a.scale = Vector3(0.74, 1.0, 0.80)
-		a.rotation = Vector3(0.10, 0, side * -0.20)
+		# The socket sits just outside the torso edge. On the real part the
+		# torso is 16mm across and the arms take the figure to about 22mm, so
+		# each arm overlaps the torso slightly and stands ~3mm proud - it does
+		# not float clear of it.
+		sh.position = Vector3(side * (torso_w * 0.5 + 1.0 * mm),
+			torso_h * 0.80, 0)
+		upper.add_child(sh)
+		# A MINIFIG ARM IS SLENDER AND NEARLY VERTICAL. This was 5.9mm wide and
+		# flared 0.20 radians outward, which made the pair read as shoulder
+		# pads or wings rather than as arms - clearest in a front render, where
+		# they stood away from the body with daylight between. The real part is
+		# about 4mm across and hangs with only a slight outward set and a small
+		# forward angle.
+		var a := brick_visual(1, 1, 12.2 * mm, shirt, false)
+		a.position = Vector3(0, -6.1 * mm, 0)
+		a.scale = Vector3(0.52, 1.0, 0.62)
+		a.rotation = Vector3(0.10, 0, side * -0.07)
 		sh.add_child(a)
 		# A minifig hand is a C-shaped clip, not a peg.
 		var hand := Node3D.new()
-		hand.position = Vector3(side * 1.6 * mm, -11.8 * mm, 1.8 * mm)
+		hand.position = Vector3(side * 1.1 * mm, -12.9 * mm, 1.8 * mm)
 		hand.rotation = Vector3(0.55, 0, 0)
 		sh.add_child(hand)
 		for seg2 in range(5):
@@ -866,18 +891,18 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# texture stretches with the geometry.
 	head.scale = Vector3(head_r, head_h, head_r)
 	head.material_override = face_material(skin)
-	head.position = Vector3(0, head_y, 0)
+	head.position = Vector3(0, head_y - hip_y, 0)
 	head.name = "Head"
-	root.add_child(head)
+	upper.add_child(head)
 
 	# The stud on top of the head - the single most identifying feature a
 	# minifig has. Hidden under most hair, visible under a hat and bare.
 	var hstud := MeshInstance3D.new()
 	hstud.mesh = stud_mesh()
 	hstud.material_override = mat(skin)
-	hstud.position = Vector3(0, head_y + head_h * 0.5 + STUD_H * 0.5, 0)
+	hstud.position = Vector3(0, head_y - hip_y + head_h * 0.5 + STUD_H * 0.5, 0)
 	hstud.name = "HeadStud"
-	root.add_child(hstud)
+	upper.add_child(hstud)
 
 	# Hair caps the head and overlaps it.
 	# Hair sits ON the head and stops just above the brows. Dropped any lower
@@ -885,9 +910,9 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# was doing - the brows are 2.9mm down from the crown, so the hair's
 	# underside has to stay above that.
 	var cap := brick_visual(2, 1, 4.0 * mm, hair, false)
-	cap.position = Vector3(0, head_y + head_h * 0.5 + 0.6 * mm, 0)
+	cap.position = Vector3(0, head_y - hip_y + head_h * 0.5 + 0.6 * mm, 0)
 	cap.scale = Vector3(0.88, 1.0, 0.88)
-	root.add_child(cap)
+	upper.add_child(cap)
 
 	return root
 

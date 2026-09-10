@@ -53,9 +53,15 @@ func _ready() -> void:
 	for k in _rigs:
 		var r: Node3D = _rigs[k]
 		_visual_root.add_child(r)
+		# Recursive: the hips and shoulders hang off Pelvis and Upper now, not
+		# off the rig root. See BS:BUILD:MINIFIG.
 		_parts[k] = {
-			"hl": r.get_node_or_null("HipL"), "hr": r.get_node_or_null("HipR"),
-			"sl": r.get_node_or_null("ShoulderL"), "sr": r.get_node_or_null("ShoulderR"),
+			"hl": r.find_child("HipL", true, false),
+			"hr": r.find_child("HipR", true, false),
+			"sl": r.find_child("ShoulderL", true, false),
+			"sr": r.find_child("ShoulderR", true, false),
+			"pelvis": r.find_child("Pelvis", true, false),
+			"upper": r.find_child("Upper", true, false),
 		}
 	_apply_character()
 
@@ -279,7 +285,7 @@ func _tumbling(delta: float) -> void:
 
 # ============================================================================
 # [BS:PLAYER:WALK_CYCLE]
-# Purpose: The stiff-legged minifig waddle.
+# Purpose: The stiff-legged minifig waddle, and the swagger on top of it.
 # Invariants:
 # - Legs and arms swing in opposition from hip and shoulder pivots, with a
 #   small vertical bob. This is THE signature silhouette of the genre - a
@@ -288,28 +294,76 @@ func _tumbling(delta: float) -> void:
 # - Amplitude scales with actual speed, so a shove from the wind animates too.
 # - The pose always returns to neutral when stopped; it must never leave the
 #   rig frozen mid-stride.
-# ============================================================================
+# --- gait: where a character's walk originates ------------------------------
+# The thing that makes two minifigs built from identical parts read as
+# different people, and part of the same walk cycle above.
+# - A MINIFIG CANNOT BEND A KNEE OR AN ELBOW. The parts are rigid, so unlike
+#   almost any other character animation there is nowhere for the personality
+#   to live except in WHERE THE MOTION STARTS. TT get enormous mileage out of
+#   this: their men half-run led from the SHOULDERS, rolling the upper body and
+#   throwing the arms, and their women lead from the HIPS, with the pelvis
+#   swinging and the shoulders comparatively quiet.
+# - So the rig is split at the waist (Pelvis and Upper) and these numbers drive
+#   the two against each other. Before the split every part was a sibling and
+#   there was nothing to lead from - both characters walked identically and the
+#   swap was invisible below the neck.
+# - Torso twist is COUNTER to the hips, as a real gait is. Rotating both the
+#   same way reads as a mannequin being carried.
+# - Keep it under about 0.2 radians. Past that it stops being a walk and starts
+#   being a dance, and the minifig's rigidity makes big angles read as broken.
+const GAIT := {
+	Character.JO: {
+		"leg": 0.66, "arm": 0.52, "sway": 0.135, "twist": 0.085,
+		"roll": 0.025, "bob": 0.070, "lean": 0.05,
+	},
+	Character.BILL: {
+		"leg": 0.60, "arm": 0.94, "sway": 0.030, "twist": 0.170,
+		"roll": 0.090, "bob": 0.098, "lean": 0.10,
+	},
+}
+
+
 func _animate_walk(delta: float, spd: float) -> void:
 	var p: Dictionary = _parts.get(character, {})
 	if p.is_empty():
 		return
+	var g: Dictionary = GAIT.get(character, GAIT[Character.JO])
 	var amp: float = clampf(spd / maxf(speed(), 0.01), 0.0, 1.0)
 	if spd > 0.6:
 		_walk_phase += delta * (7.0 + spd * 0.8)
 	else:
 		amp = 0.0
 		_walk_phase = 0.0
-	var sw: float = sin(_walk_phase) * amp * 0.66
+	var sw: float = sin(_walk_phase) * amp
 
 	if p["hl"] != null:
-		p["hl"].rotation.x = sw
+		p["hl"].rotation.x = sw * g["leg"]
 	if p["hr"] != null:
-		p["hr"].rotation.x = -sw
+		p["hr"].rotation.x = -sw * g["leg"]
 	if p["sl"] != null:
-		p["sl"].rotation.x = -sw * 0.8
+		p["sl"].rotation.x = -sw * g["arm"]
 	if p["sr"] != null:
-		p["sr"].rotation.x = sw * 0.8
-	_visual_root.position.y = absf(sin(_walk_phase)) * amp * 0.085
+		p["sr"].rotation.x = sw * g["arm"]
+
+	var pelvis: Node3D = p.get("pelvis")
+	if pelvis != null:
+		# The hips swing, and carry a little lateral shift with them - the
+		# weight moving over the planted foot. This is the half of the walk Jo
+		# is built around.
+		pelvis.rotation.z = sw * g["sway"]
+		pelvis.rotation.y = sw * g["twist"] * 0.5
+		pelvis.position.x = sw * g["sway"] * 0.30
+	var upper: Node3D = p.get("upper")
+	if upper != null:
+		# And the shoulders roll against them. This is Bill's half: the roll
+		# plus the wide arm throw is the whole swagger.
+		upper.rotation.z = sw * g["roll"]
+		upper.rotation.y = -sw * g["twist"]
+		# Lean into the run. Positive x pitches the upper body toward +Z, which
+		# is the direction this rig faces - see BS:RENDER:FACE.
+		upper.rotation.x = amp * g["lean"]
+
+	_visual_root.position.y = absf(sin(_walk_phase)) * amp * g["bob"]
 # [BS:PLAYER:WALK_CYCLE:END]
 
 

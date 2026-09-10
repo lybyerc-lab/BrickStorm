@@ -1103,3 +1103,151 @@ line each in the shader.
   change and it affects gameplay framing, so it is not a thing to slip in.
 - Corn you can lose a minifig in. `crop_patch` is ankle height.
 - Cows are correct, for the record: white, black legs, black patch.
+
+---
+
+## 2026-09-10 (late) — Linearity, the swagger, and a dead zone I built myself
+
+### The corridor was periodic, not straight
+
+Asked whether the game feels extremely linear. It does, and the first
+diagnosis was wrong: the funnel is **not** a straight line — it already weaves
++/-31m across a +/-46m corridor on a ~39-second cycle. Reading
+`global_position.z += move_speed * delta` and stopping there missed the next
+line.
+
+The real faults were underneath:
+
+- **Landmarks came from `b % 7`.** A player travelling 600m saw the same seven
+  buildings in the same order, twice. The funnel already weaved; if every block
+  is the same recipe there is nothing to weave BETWEEN.
+- **Constant speed.** At a fixed 3 m/s the player's relationship to the storm
+  never changes: no build, no lull, no chase.
+- **No lateral reason to choose.** Props were smeared uniformly, so left and
+  right were interchangeable.
+
+Blocks now have a KIND, hashed off the index so the sequence never repeats:
+farmstead, town edge, open section, highway. The kind changes the whole recipe
+rather than swapping one building. And the storm has a pace that stalls and
+surges.
+
+### Then measurement found the dead zone, and it was mine
+
+Four rounds after the block work reported a **25-26 second stretch with no
+player-facing event of any kind, in every round, starting at t=125 every
+time.** The consistency was the diagnosis: `pace()` is a function of TIME ONLY,
+so the hole landed at the identical moment whatever the world seed.
+
+A storm at half speed sits over ground it has already stripped - every
+structure in reach is rubble, every stud collected - and the autopilot orbits
+an empty circle. **A deterministic dead zone is the one thing a procedural
+world should never be able to produce**, and the storm rhythm added to fix
+linearity is what produced it.
+
+Worse on inspection: breaking the new gate deliberately showed the old pace
+bottoming at **0.28**, not the 0.5 quoted from hand-sampled timestamps. The
+sampling missed the true minimum.
+
+Floor raised to 0.70; the curve now runs 0.76-1.35. Two gates, both proven to
+fail: one for the floor, and one requiring the pace to actually VARY - so a
+future fix for a stall cannot just flatten the curve and quietly restore the
+treadmill.
+
+### And a second self-inflicted one: the storm kept missing the value
+
+Clustering each block's buildings 11-33m off centre gave the player a lateral
+choice and **starved the funnel**. Bricks torn fell 144-149 to 88-100 while
+live structures ROSE 159 to 184: more being built, less being destroyed,
+because the funnel weaves on its own schedule and the clusters were placed by a
+hash. The two do not correlate. In a game where funnel debris is where the
+money is, that is not a stylistic choice. Clusters now sit 2-19m off centre,
+where the funnel actually spends its time; the choice survives, nearer the
+middle.
+
+### Measured, four rounds at each stage
+
+| | b%7 corridor | block character | + cluster fix | + pace floor |
+|---|---|---|---|---|
+| longest silence | 10.0-17.6s | 8.5-20.4s | 25.1-26.0s* | **5.6-7.9s** |
+| bricks torn | 144-149 | 88-100 | 163-169 | **383-410** |
+| STUD/min | 57-114 | 93-142 | 81-128 | **185-237** |
+| live structures | 159 | 184 | 211 | 201 (peak 242) |
+| distance | 600m | 583m | 583m | 658m |
+
+\* all four at t≈125 — the deterministic hole.
+
+Dead time at 5.6-7.9s is the best this project has measured, and unlike the
+earlier false positive it is not bought with jackpot spam: the timing now
+VARIES between rounds, which is what says the determinism is gone.
+
+**Knock-on, stated rather than left to be found:** a healthy storm doubles the
+stud rate, so score is now 10,000-16,000 and TRUE CHASER trips in all four
+rounds. That is playtest finding 2 for the third time. `TRUE_CHASER` is still
+NOT retuned - it has been set from autopilot numbers twice and been wrong
+twice - but it is now definitively too low rather than merely suspect.
+
+### The swagger
+
+Director note: TT's men half-run led from the shoulders, their women from the
+hips. Exactly right, and the rig could not express it: Torso, Shoulders and
+Hips were flat siblings, so there was nothing to lead FROM. Both characters
+walked identically and the swap was invisible below the neck.
+
+A minifig cannot bend a knee or an elbow - the parts are rigid - so unlike
+almost any other character animation, **the only place personality can live is
+where the motion originates**. The rig is split at the waist (`Pelvis`,
+`Upper`) and driven against itself: Jo rolls and shifts the pelvis with quiet
+shoulders; Bill rolls the upper body nearly 4x as hard, twists twice as much
+against the hips, and throws the arms nearly twice as wide. Torso twist runs
+COUNTER to the hips, as a real gait does.
+
+Gated three ways - the table must differ, the rig must have the pivots, and the
+two must strike measurably different poses mid-stride - and proven to fail.
+
+**One gate needed fixing first, and it is worth recording.** The pose check
+dereferenced a null pivot when the rig was broken, which does not fail a Godot
+run: it abandons the self-test part-way and the game loops until the harness
+timeout. The structural check had already found the real fault; the behavioural
+one swallowed it into a hang. **A gate that hangs CI is worse than one that
+fails**, because a timeout says nothing about what broke.
+
+**A pre-existing bug fell out of building the probe:** the arms were 5.9mm wide
+and flared 0.20 radians outward, reading as shoulder pads with daylight between
+them and the torso. The real part is about 4mm and hangs nearly vertical.
+Only visible in a dedicated front render of the rest pose - a walk cycle strip
+would not have shown it, and a gameplay screenshot never did.
+
+### The API audit
+
+Asked whether we are underusing Godot. Three real answers:
+
+- **CI had never been checked.** Four probes wired in across five pushes, with
+  "wired into CI" in the commit messages, and not one run ever verified. All 27
+  are green and every probe step executes - but that was luck, not diligence.
+  What makes it trustworthy rather than assumed is that part_probe.gd fails
+  itself when the MultiMesh buffer reads back empty, which is exactly what a
+  missing renderer looks like. It passes, so a renderer is genuinely there.
+- **Loose studs are drawn the way this project banned.** `StudField` makes a
+  Node3D per stud and `stud_visual()` puts TWO MeshInstance3Ds in each: 480
+  draw calls at the 240 cap, in a codebase that batched every structure into
+  MultiMeshes to avoid precisely this, for the most numerous objects in the
+  game. Not yet fixed.
+- **Zero particles anywhere.** No GPUParticles3D or CPUParticles3D. The
+  tornado is the headline visual of a tornado game and has no dust skirt, no
+  dirt streaming up the vortex, no motes, no rain or hail.
+
+Also unused and worth having: `visibility_range` (Godot implements the LOD
+falloff TT_ENGINE_NOTES records as "not implemented"), `AnimationTree` (the
+hand-driven gait will not blend idle/walk/run/carry/brace as if-chains), and
+`Path3D` for authoring set pieces along the storm's route. Correctly absent on
+the compatibility renderer: Decal, volumetric fog, SDFGI.
+
+### Not done
+
+- **Iconic scenes.** The storm cellar and the chase rig are PROPS, not scenes.
+  The drive-in, the barn you drive through, and the sisters are the three that
+  would make someone say "that's Twister", and the authored-area machinery
+  already exists and is used exactly once, at the start.
+- Studs to a MultiMesh; particles on the funnel.
+- No CLAUDE.md, so the no-drift policy and the anchor discipline do not load
+  into a future session automatically.

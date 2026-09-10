@@ -382,56 +382,128 @@ func _populate_area(area: SubArea) -> void:
 	var b := area.index + 1
 	var w := CORRIDOR_HALF_WIDTH
 
-	# One landmark per block, alternating, so there is always something big
-	# arriving ahead of the storm.
-	var lx: float = lerpf(-w * 0.7, w * 0.7, _rng(b * 7))
-	var lz: float = z0 + _rng(b * 11) * span
-	match b % 7:
-		0: _add_structure(PropBuilder.barn(Vector3(lx, 0, lz)))
-		1: _add_structure(PropBuilder.farmhouse(Vector3(lx, 0, lz)))
+	# BLOCK CHARACTER. The landmark used to come from `b % 7`, so a player
+	# travelling 600m saw the same seven buildings in the same order, twice.
+	# That periodicity - not the corridor itself - is what made the world feel
+	# linear: the funnel already weaves across most of the corridor width, but
+	# if every block is the same recipe there is nothing to weave BETWEEN.
+	#
+	# A block now has a KIND, hashed off its index so the sequence does not
+	# repeat, and the kind changes the whole recipe rather than swapping one
+	# building. Farmsteads and town edges are where the value is; open sections
+	# are what make them feel dense by contrast, and are the only places the
+	# land reads as big. The furniture layer runs everywhere regardless,
+	# because being a couple of paces from something breakable is the thing
+	# that removes dead time (BS:WORLD:STREAM).
+	var roll := _rng(b * 131)
+	var kind := 0                       # 0 farmstead, 1 town edge, 2 open, 3 highway
+	if roll < 0.34:
+		kind = 0
+	elif roll < 0.62:
+		kind = 1
+	elif roll < 0.80:
+		kind = 2
+	else:
+		kind = 3
+
+	# Which side of the corridor this block's value sits on. Clustering it
+	# gives the player a reason to be left or right of the funnel instead of
+	# treating the corridor as a uniform smear.
+	#
+	# BUT NOT FAR OUT. The first version pushed clusters to 0.25-0.72 of the
+	# half-width - 11 to 33 metres off centre - and measured bricks torn fell
+	# from 144-149 a round to 88-100 while live structures ROSE from 159 to
+	# 184. More was being built and less was being destroyed, because the
+	# funnel weaves on its own schedule and the clusters were placed by a hash:
+	# the two do not correlate, so the storm kept missing the farmsteads. In a
+	# game where funnel debris is where the money is (North Star), starving the
+	# storm of things to eat is not a stylistic choice.
+	# The lateral CHOICE stays; it just lives nearer the middle, where the
+	# funnel actually spends its time.
+	var side: float = 1.0 if _rng(b * 17) > 0.5 else -1.0
+	var cx: float = side * lerpf(w * 0.05, w * 0.42, _rng(b * 7))
+	var cz: float = z0 + lerpf(0.2, 0.8, _rng(b * 11)) * span
+
+	match kind:
+		0:
+			# FARMSTEAD: the buildings huddle together, as they really do -
+			# house, barn, silo and tower share a windbreak and a yard.
+			_add_structure(PropBuilder.farmhouse(Vector3(cx, 0, cz)))
+			_add_structure(PropBuilder.barn(Vector3(cx + side * 11.0, 0, cz + 9.0)))
+			_add_structure(PropBuilder.silo(Vector3(cx + side * 4.0, 0, cz + 15.0)))
+			if _rng(b * 23) > 0.45:
+				_add_structure(PropBuilder.water_tower(Vector3(cx - side * 9.0, 0, cz - 7.0)))
+			_add_structure(PropBuilder.storm_cellar(Vector3(cx - side * 4.5, 0, cz - 3.0),
+				_rng(b * 29) * TAU))
+			_add_structure(PropBuilder.fence_run(
+				Vector3(cx - side * 14.0, 0, cz - 12.0), Vector3(cx - side * 14.0, 0, cz + 18.0)))
+			for k in range(5):
+				_add_structure(PropBuilder.tree(
+					Vector3(cx + side * 17.0 + _rng(b * 3 + k) * 1.6, 0, cz - 10.0 + float(k) * 3.4),
+					0.85 + _rng(b * 3 + k) * 0.5))
+		1:
+			# TOWN EDGE: the elevator on the skyline, the drive-in, and the
+			# clutter that collects where a road meets a town.
+			_add_structure(PropBuilder.grain_elevator(Vector3(cx, 0, cz), _rng(b) * 0.6))
+			_add_structure(PropBuilder.drive_in_screen(
+				Vector3(cx - side * 16.0, 0, cz + 12.0), _rng(b * 5) * 2.0))
+			_add_structure(PropBuilder.water_tower(Vector3(cx + side * 10.0, 0, cz - 9.0)))
+			for k in range(6):
+				var tz: float = z0 + _rng(b * 71 + k * 9) * span
+				_add_structure(PropBuilder.furniture(b * 13 + k,
+					Vector3(cx + lerpf(-9.0, 9.0, _rng(b * 41 + k)), 0, tz),
+					_rng(b * 61 + k) * TAU))
+			_add_structure(PropBuilder.pickup(Vector3(cx - side * 6.0, 0, cz + 4.0),
+				BrickLib.C_WHITE, _rng(b * 13) * TAU))
 		2:
-			_add_structure(PropBuilder.silo(Vector3(lx, 0, lz)))
-			_add_structure(PropBuilder.silo(Vector3(lx + 4.0, 0, lz - 4.0)))
-		3: _add_structure(PropBuilder.water_tower(Vector3(lx, 0, lz)))
-		4: _add_structure(PropBuilder.windmill(Vector3(lx, 0, lz)))
-		5: _add_structure(PropBuilder.grain_elevator(Vector3(lx, 0, lz), _rng(b) * 0.6))
-		_: _add_structure(PropBuilder.drive_in_screen(Vector3(lx, 0, lz), _rng(b) * 2.0))
+			# OPEN SECTION. One thing on the horizon and a lot of sky. This is
+			# the breathing space, and the only place the land reads as big.
+			_add_structure(PropBuilder.windmill(Vector3(cx, 0, cz)))
+			for k in range(4):
+				_add_structure(PropBuilder.tree(
+					Vector3(cx + side * 9.0 + _rng(b * 3 + k) * 1.4, 0, cz + float(k) * 3.2),
+					0.85 + _rng(b * 3 + k) * 0.5))
+			_add_structure(PropBuilder.crop_patch(Vector3(cx - side * 12.0, 0, cz + 6.0)))
+			# An open section still needs things to hit. Sparse is the point;
+			# EMPTY is a twenty-second hole in the round, and two of four
+			# measured rounds had one. The extra scatter keeps the contrast
+			# with a farmstead while giving the player something within reach.
+			for k2 in range(9):
+				_add_structure(PropBuilder.furniture(b * 29 + k2,
+					Vector3(lerpf(-w, w, _rng(b * 83 + k2 * 31)), 0,
+						z0 + _rng(b * 37 + k2 * 7) * span),
+					_rng(b * 43 + k2) * TAU))
+		_:
+			# HIGHWAY: the chase convoy pulled over on the shoulder, poles down
+			# both sides, and signs. The trucks are the point.
+			var hx: float = side * 26.0
+			for i in range(3):
+				_add_structure(PropBuilder.pickup(
+					Vector3(hx + _rng(b * 19 + i) * 3.0, 0, z0 + 12.0 + float(i) * 13.0),
+					[BrickLib.C_BLUE, BrickLib.C_WHITE, BrickLib.C_YELLOW][i],
+					PI * 0.5 + _rng(b * 31 + i) * 0.25, i < 2))
+			for i2 in range(2):
+				_add_structure(PropBuilder.furniture(5,
+					Vector3(hx - side * 4.0, 0, z0 + 20.0 + float(i2) * 22.0), 0.0))
+			_add_structure(PropBuilder.power_line(
+				Vector3(-hx * 0.35, 0, z0), Vector3(-hx * 0.35, 0, z0 + span)))
 
 	# THE POWER LINE. A run of poles marching to a flat horizon is the single
-	# most Great Plains image there is, and the corridor had none. They follow
-	# the section road the ground shader draws at x = +/-24, alternating sides
-	# so the player is not always looking at the same one.
+	# most Great Plains image there is. They follow the section road the ground
+	# shader draws at x = +/-24, alternating sides so the player is not always
+	# looking at the same one.
 	var road_x: float = 24.0 if b % 2 == 0 else -24.0
 	_add_structure(PropBuilder.power_line(
 		Vector3(road_x + 3.0, 0, z0), Vector3(road_x + 3.0, 0, z0 + span)))
 
-	# Trees grow in SHELTERBELT ROWS out here, planted as windbreaks along a
-	# field edge, not scattered singly across the middle of a section like a
-	# park. Clustering them also leaves the open field genuinely open, which is
-	# most of what makes the land read as big.
-	var belt_x: float = lerpf(-w * 0.8, w * 0.8, _rng(b * 31))
-	var belt_z: float = z0 + _rng(b * 17) * span * 0.6
-	for k in range(4):
-		_add_structure(PropBuilder.tree(
-			Vector3(belt_x + _rng(b * 3 + k) * 1.4, 0, belt_z + float(k) * 3.2),
-			0.85 + _rng(b * 3 + k) * 0.5))
-	if b % 2 == 0:
-		var fx: float = lerpf(-w * 0.8, w * 0.8, _rng(b * 41))
-		_add_structure(PropBuilder.fence_run(
-			Vector3(fx, 0, z0 + 2.0), Vector3(fx, 0, z0 + span - 2.0)))
-
-	# the dense furniture layer - this is what removes dead time
+	# The dense furniture layer runs in EVERY block, whatever its character.
+	# This is what removes dead time, and an open section that is genuinely
+	# empty is a fifteen-second hole in the round.
 	for k in range(11):
 		var fx2: float = lerpf(-w, w, _rng(b * 97 + k * 23))
 		var fz: float = z0 + _rng(b * 53 + k * 13) * span
 		var yaw: float = _rng(b * 61 + k) * TAU
 		_add_structure(PropBuilder.furniture(b * 7 + k, Vector3(fx2, 0, fz), yaw))
-
-	# an occasional parked truck to ram
-	if b % 3 == 1:
-		var px: float = lerpf(-w * 0.6, w * 0.6, _rng(b * 71))
-		_add_structure(PropBuilder.pickup(Vector3(px, 0, z0 + span * 0.5),
-			[BrickLib.C_BLUE, BrickLib.C_YELLOW, BrickLib.C_WHITE][b % 3], _rng(b * 13) * TAU))
 # [BS:WORLD:STREAM:END]
 # ============================================================================
 # [BS:WORLD:CRITTERS]
@@ -2288,6 +2360,97 @@ func _run_selftest() -> void:
 		fails.append("player debris lives %.2fs against the funnel's %.2fs - the"
 			% [PLAYER_BRICK_LIFETIME, BRICK_LIFETIME]
 			+ " smash no longer pays before the storm does")
+
+	# --- 4b5. the two characters do not walk the same ---------------------
+	# A minifig cannot bend a knee or an elbow, so the only place a walk can
+	# carry personality is WHERE IT ORIGINATES. Before the rig was split at the
+	# waist both characters used one shoulder-swing number and were identical
+	# below the neck - the swap was invisible unless you read the HUD. These
+	# assert the two gaits still differ in the way they are supposed to:
+	# Jo leads from the hips, Bill from the shoulders.
+	# See the gait table under BS:PLAYER:WALK_CYCLE.
+	var gj: Dictionary = Player.GAIT[Player.Character.JO]
+	var gb: Dictionary = Player.GAIT[Player.Character.BILL]
+	if float(gj["sway"]) <= float(gb["sway"]):
+		fails.append("Jo's hip sway (%.3f) is not greater than Bill's (%.3f) -"
+			% [gj["sway"], gb["sway"]] + " she is supposed to lead from the hips")
+	if float(gb["roll"]) <= float(gj["roll"]) or float(gb["arm"]) <= float(gj["arm"]):
+		fails.append("Bill's shoulder roll/throw (%.3f/%.3f) is not greater than"
+			% [gb["roll"], gb["arm"]] + " Jo's (%.3f/%.3f) - he is supposed to"
+			% [gj["roll"], gj["arm"]] + " lead from the shoulders")
+	# And that the rig can actually express it. A flat rig has nowhere to put
+	# a lead, which is the state this replaced.
+	for who in [Player.Character.JO, Player.Character.BILL]:
+		var rig: Node3D = player._rigs[who]
+		for nm in ["Pelvis", "Upper", "HipL", "ShoulderR"]:
+			if rig.find_child(nm, true, false) == null:
+				fails.append("the %s rig has no '%s' - the gait cannot drive it"
+					% ["Jo" if who == Player.Character.JO else "Bill", nm])
+	# Behavioural: at the same point in the stride the two must strike
+	# measurably different poses.
+	#
+	# GUARDED, because the first version was not. With the pivots renamed away
+	# this dereferenced a null Node3D, which does not fail the run - it leaves
+	# the self-test part-way through and the game loops until the harness
+	# timeout kills it. The structural check above had already reported the
+	# real fault correctly; the behavioural one then swallowed it into a hang.
+	# A gate that hangs CI is worse than one that fails, because a timeout says
+	# nothing about what broke.
+	var was_char := player.character
+	var poses: Dictionary = {}
+	var pivots_ok := true
+	for who2 in [Player.Character.JO, Player.Character.BILL]:
+		player.character = who2
+		player._apply_character()
+		player._walk_phase = PI * 0.5
+		player._animate_walk(0.0, player.speed())
+		var pv: Node3D = player._rigs[who2].find_child("Pelvis", true, false)
+		var up: Node3D = player._rigs[who2].find_child("Upper", true, false)
+		if pv == null or up == null:
+			pivots_ok = false
+			continue
+		poses[who2] = Vector2(pv.rotation.z, up.rotation.z)
+	player.character = was_char
+	player._apply_character()
+	player._walk_phase = 0.0
+	player._animate_walk(0.0, 0.0)
+	if not pivots_ok:
+		fails.append("the gait pose check could not run - a rig is missing its"
+			+ " waist pivots (reported above)")
+	else:
+		var pj: Vector2 = poses[Player.Character.JO]
+		var pb: Vector2 = poses[Player.Character.BILL]
+		if absf(pj.x - pb.x) < 0.03 or absf(pj.y - pb.y) < 0.03:
+			fails.append("Jo and Bill strike the same pose mid-stride (hips"
+				+ " %.3f/%.3f, shoulders %.3f/%.3f) - the swap is invisible"
+				% [pj.x, pb.x, pj.y, pb.y] + " below the neck")
+
+	# --- 4b6. the storm never crawls -------------------------------------
+	# A storm at half speed sits over ground it has already stripped, and the
+	# player orbits an empty circle. Measured: a floor of 0.5 produced a
+	# 25-second stretch with NO player-facing event at all, in all four rounds,
+	# starting at t=125 every time - because pace() is a function of time only,
+	# so the hole landed identically whatever the world seed. That is a
+	# DETERMINISTIC dead zone, which is the one thing a procedural world should
+	# never be able to make. See BS:STORM:PATH.
+	var pace_lo := 9.0
+	var pace_hi := 0.0
+	var keep_t := tornado._t
+	for i in range(4000):
+		tornado._t = float(i) * 0.25
+		var pv := tornado.pace()
+		pace_lo = minf(pace_lo, pv)
+		pace_hi = maxf(pace_hi, pv)
+	tornado._t = keep_t
+	if pace_lo < Tornado.PACE_FLOOR:
+		fails.append("the storm slows to %.2f of base speed - below the %.2f floor,"
+			% [pace_lo, Tornado.PACE_FLOOR]
+			+ " it stalls over ground it has already eaten")
+	# And it still has to HAVE a rhythm; a flat pace is the treadmill this
+	# replaced.
+	if pace_hi - pace_lo < 0.25:
+		fails.append("the storm's pace only varies by %.2f - that is a constant"
+			% (pace_hi - pace_lo) + " speed, and the corridor reads as a treadmill")
 
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game

@@ -375,6 +375,31 @@ static func power_line(from: Vector3, to: Vector3) -> Structure:
 	return st
 
 
+# A STORM CELLAR: the sloped double doors set into the ground beside a
+# farmhouse. Nothing says tornado country faster, and the film this game is
+# built on opens on a family going down into one. Built, not copied - a cellar
+# door is a real object, and Docs/ATTRIBUTION.md forbids taking anything from
+# the film itself.
+static func storm_cellar(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	# The concrete surround, sitting just proud of the field.
+	for sz in [-1.0, 1.0]:
+		st.add_brick(7, 1, 0.34, BrickLib.C_LGREY, Vector3(0, 0.17, sz * 1.1), Vector3.ZERO, false)
+	for sx in [-1.0, 1.0]:
+		st.add_brick(1, 5, 0.34, BrickLib.C_LGREY, Vector3(sx * 1.6, 0.17, 0), Vector3.ZERO, false)
+	# Two leaves, sloping up to a ridge in the middle.
+	for sx2 in [-1.0, 1.0]:
+		st.add_part(BrickLib.PART_SLOPE, 5, 3, 0.5, BrickLib.C_BROWN,
+			Vector3(sx2 * 0.75, 0.45, 0), Vector3(0, sx2 * PI * 0.5, 0))
+	# The handle, and the block the doors are barred with.
+	st.add_part(BrickLib.PART_TILE, 1, 2, 0.12, BrickLib.C_DGREY,
+		Vector3(0, 0.78, 0.55), Vector3.ZERO, false)
+	st.finish()
+	return st
+
+
 # A grain elevator: the concrete headhouse-and-silos block that stands on the
 # skyline of every plains town, visible from further away than anything else.
 static func grain_elevator(pos: Vector3, yaw: float = 0.0) -> Structure:
@@ -403,7 +428,8 @@ static func grain_elevator(pos: Vector3, yaw: float = 0.0) -> Structure:
 	return st
 
 
-static func pickup(pos: Vector3, color: Color, yaw: float = 0.0) -> Structure:
+static func pickup(pos: Vector3, color: Color, yaw: float = 0.0,
+		chase: bool = false) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
@@ -425,6 +451,30 @@ static func pickup(pos: Vector3, color: Color, yaw: float = 0.0) -> Structure:
 			# were boxes AND were spun about the wrong axis; a box hid it.
 			st.add_part(BrickLib.PART_ROUND, 1, 1, 0.4, BrickLib.C_BLACK,
 				Vector3(sx, 0.3, sz), Vector3(PI * 0.5, 0, 0), false)
+	if chase:
+		# A CHASE RIG. A convoy of beaten-up trucks bristling with masts,
+		# whips and a dish is the visual signature of storm chasing, and a
+		# plain farm pickup carries none of it. Instrument cases ride in the
+		# bed; the mast and the anemometer go on the roof.
+		st.add_part(BrickLib.PART_TILE, 4, 4, BrickLib.PLATE_H, BrickLib.C_DGREY,
+			Vector3(0.5, 2.12, 0))
+		st.add_part(BrickLib.PART_ROUND, 1, 1, 2.4, BrickLib.C_LGREY,
+			Vector3(0.5, 3.3, 0), Vector3.ZERO, false)
+		# Cups on the anemometer, and a pair of whips leaning back.
+		for i in range(3):
+			var a: float = TAU * float(i) / 3.0
+			st.add_part(BrickLib.PART_ROUND, 1, 1, 0.2, BrickLib.C_WHITE,
+				Vector3(0.5 + cos(a) * 0.42, 4.4, sin(a) * 0.42), Vector3.ZERO, false)
+		for sz2 in [-0.7, 0.7]:
+			st.add_part(BrickLib.PART_ROUND, 1, 1, 1.6, BrickLib.C_BLACK,
+				Vector3(-0.2, 2.9, sz2), Vector3(0.34, 0, 0), false)
+		# The dish, tipped up at the sky.
+		st.add_part(BrickLib.PART_CONE, 3, 3, 0.4, BrickLib.C_WHITE,
+			Vector3(-1.3, 2.35, 0), Vector3(-0.9, 0, 0), false)
+		# Instrument cases in the bed.
+		for i2 in range(2):
+			st.add_brick(2, 3, 0.5, BrickLib.C_YELLOW,
+				Vector3(-1.5 + float(i2) * 0.9, 1.8, 0))
 	st.finish()
 	return st
 

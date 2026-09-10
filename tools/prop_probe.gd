@@ -88,6 +88,8 @@ func _run() -> void:
 		["power_line", PropBuilder.power_line(Vector3(-21, 0, 0), Vector3(21, 0, 0)), 34.0, 11.0, 4.0],
 		["grain_elevator", PropBuilder.grain_elevator(Vector3.ZERO, 0.0), 30.0, 11.0, 6.0],
 		["aermotor", PropBuilder.windmill(Vector3.ZERO), 15.0, 5.0, 4.0],
+		["storm_cellar", PropBuilder.storm_cellar(Vector3.ZERO, 0.0), 5.5, 2.4, 0.5],
+		["chase_truck", PropBuilder.pickup(Vector3.ZERO, BrickLib.C_WHITE, 0.5, true), 11.0, 4.0, 1.8],
 	]
 	for shot in shots:
 		var st: Structure = shot[1]

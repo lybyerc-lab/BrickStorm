@@ -267,11 +267,22 @@ func _physics_process(delta: float) -> void:
 # - The funnel obeys drama, not meteorology (North Star: not a
 #   weather simulator).
 # - It loops, so a level never runs out of storm.
+# - IT HAS RHYTHM. Constant speed is the thing that made the corridor feel
+#   linear even though the funnel already weaved: at a fixed 3 m/s the player's
+#   relationship to the storm never changes, so there is no build, no lull and
+#   no chase - just a treadmill. A storm that stalls over a farmstead and then
+#   surges gives the round a shape without any new mechanics, because standing
+#   still means working one place out and surging means running to keep up.
+# - The weave is DETERMINISTIC BUT NOT OBVIOUSLY PERIODIC. Two sines at 0.16
+#   and 0.071 repeat visibly; the third term is incommensurate with both so the
+#   track does not read as a sine wave to a player who is watching it.
 # ============================================================================
 func _advance_path(delta: float) -> void:
 	if corridor_mode:
-		global_position.z += move_speed * delta
-		global_position.x = sin(_t * 0.16) * corridor_drift + cos(_t * 0.071) * corridor_drift * 0.4
+		global_position.z += move_speed * pace() * delta
+		global_position.x = sin(_t * 0.16) * corridor_drift \
+			+ cos(_t * 0.071) * corridor_drift * 0.4 \
+			+ sin(_t * 0.0237 + 2.1) * corridor_drift * 0.5
 		return
 	if _waypoints.size() < 2:
 		return
@@ -287,6 +298,27 @@ func _advance_path(delta: float) -> void:
 
 # Loose bricks spiral up the funnel and get thrown clear at the top.
 # [BS:STORM:PATH:END]
+# How fast the storm is travelling right now, as a multiple of move_speed.
+#
+# THE FLOOR IS LOAD-BEARING. The first version bottomed out near 0.5 - about
+# 1.5 m/s - and measurement found a 25-second stretch with NO player-facing
+# event of any kind, in all four rounds, starting at t=125 every time. A storm
+# that crawls sits over ground it has already stripped: every structure in
+# reach is rubble, every stud is collected, and the player orbits an empty
+# circle. Worse, pace() is a function of TIME ONLY, so the hole landed at the
+# same moment in every round whatever the world seed - which is what made it
+# obvious. A deterministic dead zone is the one thing a procedural world
+# should not be able to produce.
+#
+# So the storm still has rhythm - it works a place over, then runs - but it
+# never stops advancing into fresh ground. Guarded in --selftest.
+const PACE_FLOOR := 0.70
+
+
+func pace() -> float:
+	return 1.05 + 0.20 * sin(_t * 0.043) + 0.10 * sin(_t * 0.017 + 1.3)
+
+
 func _drag_debris() -> void:
 	var c := funnel_pos()
 	for root in [debris_root, critter_root]:
