@@ -1012,3 +1012,94 @@ ahead of the funnel rather than anything to do with studs.
 The SMASH/min difference between the middle and right columns is most likely the
 autopilot responding to a changed reward landscape rather than a player-facing
 change, and it should not be read as a result.
+
+---
+
+## 2026-09-10 (later still) — "This doesn't scream Oklahoma"
+
+The director's note on the first hybrid build, before playing it. It was right,
+and the diagnosis was not subtle once looked for: the frame contained a **white
+picket fence** and a **Dutch windmill**. Wrong continent, twice, in one shot.
+
+The rest of it was generic rather than wrong. A barn, a silo and a water tower
+on rolling green grass is *any* farm, anywhere. What makes the Great Plains the
+Great Plains is specific and mostly absent:
+
+- **The land is surveyed on a grid.** Enormous geometric blocks of different
+  crops, separated by dead-straight dirt roads, with the plough rows running
+  visibly across each block. Ours was one continuous lawn-green field.
+- **The palette is wheat, sage, stubble and RED DIRT.** Oklahoma's soil is
+  famously red and storm season is gold and dust. Emerald green is England.
+- **Utility poles marching to a flat horizon** — arguably *the* Plains image,
+  and the thing chaser footage always has in frame. We had none.
+- **Barbed wire on leaning posts**, not pickets.
+- **Trees in shelterbelt rows**, planted as windbreaks along a field edge and
+  clustered at the farmstead. Scattering them singly across open sections reads
+  as a park and, worse, stops the open land reading as open.
+- **A grain elevator on the skyline**, visible from further than anything else.
+- **A lattice aermotor** with a many-bladed fan and a tail vane.
+
+### What changed
+
+Most of it is in `shaders/ground.gdshader`, because most of it is the ground.
+The section grid, the crop blocks, the dirt roads, the plough rows and the
+turned headland at each field margin are all procedural and world-locked.
+
+**That also fixed a bug nobody had noticed.** The crop variation used to be
+sixteen meshes scattered once within 150m of the origin — while the storm
+travels 600m. The back two thirds of every round ran on bare ground. A
+procedural function has no such edge.
+
+The grid is offset half a pitch so the section roads fall at x = +/-24 rather
+than through the origin: the storm runs down x = 0, and a road there would be
+destroyed on every pass and never seen intact.
+
+New props, all smashable and therefore brick-built under the revised pillar 1:
+`power_line` (poles, crossarms, insulators, and wires that sag), and
+`grain_elevator` (forty plate-thick courses per cell so the funnel takes it down
+in rings). `windmill` was rebuilt from a Dutch mill into a splayed lattice
+aermotor with diagonal bracing. `fence_run` is barbed wire.
+
+### Three things the renders caught that the code looked fine for
+
+- **The power line's crossarms lay parallel to the line.** `yaw` puts a tile's
+  long axis across a run and `yaw + PI/2` puts it along; the crossarm had been
+  given the wire's rotation.
+- **The wires were 7.5m tiles floating in 14m spans**, leaving three metres of
+  air at each end. They read as planks hanging in the sky. Two half-span
+  segments per span, tilted, now both reach the poles and sag.
+- **Barbed wire tore off as a blizzard of near-black confetti.** Galvanised wire
+  is light grey in reality, so this was wrong twice over.
+
+And three self-test failures, all of them the gate correctly encoding the *old*
+design: the fence no longer uses a cheese slope because it has no pickets, the
+windmill no longer uses a cone because it is not Dutch, and the finish-bonus
+check tore an 8m fence with a 6m radius, reached the end of what was in range
+and stopped - so the structure never became rubble and the bonus never paid.
+That last one was the test being too small, not the code being wrong.
+
+### Measured, set-piece yard (the only fixed-camera frame)
+
+| | olive hybrid | Oklahoma |
+|---|---|---|
+| median luma | 110.0 | 97.5 |
+| IQR | 25.4 | **52.1** |
+| flat 8x8 tiles | 8.7% | **4.9%** |
+| mean saturation | 0.569 | 0.652 |
+
+Tonal range roughly doubled — the fields give the frame contrast it did not
+have — and flat tiles halved again, now well under the demo's 12.5-18.2%.
+
+**Saturation went UP, and that is a deliberate acceptance rather than a
+regression.** Wheat gold and red earth are more saturated hues than olive
+green; what changed is that they are now *earth* hues. A desaturated lawn is
+still a lawn. If the director wants it lower, the wheat and dirt colours are one
+line each in the shader.
+
+### Not done
+
+- The sky is still a narrow pale band. Big sky country means the sky is most of
+  the frame, and ours sits about a fifth from the top. That is a camera pitch
+  change and it affects gameplay framing, so it is not a thing to slip in.
+- Corn you can lose a minifig in. `crop_patch` is ankle height.
+- Cows are correct, for the record: white, black legs, black patch.

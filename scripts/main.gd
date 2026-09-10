@@ -245,22 +245,12 @@ func _build_ground() -> void:
 	mi.material_override = gm
 	add_child(mi)
 
-	# crop squares, so the funnel's track across the fields reads from the air
-	for i in range(16):
-		var q := PlaneMesh.new()
-		var w := randf_range(18.0, 34.0)
-		q.size = Vector2(w, randf_range(18.0, 34.0))
-		var m := MeshInstance3D.new()
-		m.mesh = q
-		# Earthier than they were. These are terrain, and terrain gives its
-		# saturation up to the plastic (pillar 2, clarified 2026-09-10).
-		var tone := randf_range(-0.05, 0.08)
-		var base := Color(0.42 + tone, 0.45 + tone, 0.30 + tone * 0.5)
-		if i % 3 == 0:
-			base = Color(0.56 + tone, 0.53 + tone, 0.40)
-		m.material_override = BrickLib.terrain_mat(base)
-		m.position = Vector3(randf_range(-150, 150), 0.02 + float(i) * 0.002, randf_range(-150, 150))
-		add_child(m)
+	# The crop squares are GONE. They were sixteen meshes scattered once within
+	# 150m of the origin while the storm travels 600m, so the back two thirds
+	# of every round ran on bare ground - and being randomly placed blobs they
+	# read as patches on a lawn rather than as farmland. The fields, the section
+	# roads and the plough rows are now drawn by shaders/ground.gdshader, which
+	# is world-locked and therefore has no edge to run off.
 
 
 # --------------------------------------------------------------------- world
@@ -396,7 +386,7 @@ func _populate_area(area: SubArea) -> void:
 	# arriving ahead of the storm.
 	var lx: float = lerpf(-w * 0.7, w * 0.7, _rng(b * 7))
 	var lz: float = z0 + _rng(b * 11) * span
-	match b % 6:
+	match b % 7:
 		0: _add_structure(PropBuilder.barn(Vector3(lx, 0, lz)))
 		1: _add_structure(PropBuilder.farmhouse(Vector3(lx, 0, lz)))
 		2:
@@ -404,12 +394,26 @@ func _populate_area(area: SubArea) -> void:
 			_add_structure(PropBuilder.silo(Vector3(lx + 4.0, 0, lz - 4.0)))
 		3: _add_structure(PropBuilder.water_tower(Vector3(lx, 0, lz)))
 		4: _add_structure(PropBuilder.windmill(Vector3(lx, 0, lz)))
+		5: _add_structure(PropBuilder.grain_elevator(Vector3(lx, 0, lz), _rng(b) * 0.6))
 		_: _add_structure(PropBuilder.drive_in_screen(Vector3(lx, 0, lz), _rng(b) * 2.0))
 
-	# trees and fences give the corridor edges
-	for k in range(3):
-		var tx: float = lerpf(-w, w, _rng(b * 31 + k * 17))
-		_add_structure(PropBuilder.tree(Vector3(tx, 0, z0 + _rng(b + k * 5) * span),
+	# THE POWER LINE. A run of poles marching to a flat horizon is the single
+	# most Great Plains image there is, and the corridor had none. They follow
+	# the section road the ground shader draws at x = +/-24, alternating sides
+	# so the player is not always looking at the same one.
+	var road_x: float = 24.0 if b % 2 == 0 else -24.0
+	_add_structure(PropBuilder.power_line(
+		Vector3(road_x + 3.0, 0, z0), Vector3(road_x + 3.0, 0, z0 + span)))
+
+	# Trees grow in SHELTERBELT ROWS out here, planted as windbreaks along a
+	# field edge, not scattered singly across the middle of a section like a
+	# park. Clustering them also leaves the open field genuinely open, which is
+	# most of what makes the land read as big.
+	var belt_x: float = lerpf(-w * 0.8, w * 0.8, _rng(b * 31))
+	var belt_z: float = z0 + _rng(b * 17) * span * 0.6
+	for k in range(4):
+		_add_structure(PropBuilder.tree(
+			Vector3(belt_x + _rng(b * 3 + k) * 1.4, 0, belt_z + float(k) * 3.2),
 			0.85 + _rng(b * 3 + k) * 0.5))
 	if b % 2 == 0:
 		var fx: float = lerpf(-w * 0.8, w * 0.8, _rng(b * 41))
@@ -1797,6 +1801,8 @@ func _prop_by_name(n: String) -> Structure:
 		"pickup": return PropBuilder.pickup(Vector3.ZERO, BrickLib.C_BLUE, 0.0)
 		"drive_in": return PropBuilder.drive_in_screen(Vector3.ZERO, 0.0)
 		"windmill": return PropBuilder.windmill(Vector3.ZERO)
+		"power_line": return PropBuilder.power_line(Vector3(-20, 0, 0), Vector3(20, 0, 0))
+		"grain_elevator": return PropBuilder.grain_elevator(Vector3.ZERO, 0.0)
 		"outhouse": return PropBuilder.outhouse(Vector3.ZERO)
 	return null
 
@@ -2153,10 +2159,15 @@ func _run_selftest() -> void:
 		"silo": [BrickLib.PART_ROUND, BrickLib.PART_CONE],
 		"water_tower": [BrickLib.PART_ROUND, BrickLib.PART_CONE, BrickLib.PART_TILE],
 		"tree": [BrickLib.PART_ROUND, BrickLib.PART_CONE],
-		"fence": [BrickLib.PART_CHEESE, BrickLib.PART_TILE],
+		# Barbed wire on round posts, not pointed pickets - see BS:BUILD:PLAINS.
+		"fence": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
+		"power_line": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
+		"grain_elevator": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
 		"pickup": [BrickLib.PART_SLOPE, BrickLib.PART_TILE, BrickLib.PART_ROUND],
 		"drive_in": [BrickLib.PART_TILE],
-		"windmill": [BrickLib.PART_ROUND, BrickLib.PART_CONE, BrickLib.PART_TILE],
+		# A lattice aermotor: round legs, tile bracing and blades. No cone -
+		# that was the Dutch mill this replaced.
+		"windmill": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
 		"outhouse": [BrickLib.PART_SLOPE],
 	}
 	for prop_name in expect_kinds:
@@ -2221,16 +2232,22 @@ func _run_selftest() -> void:
 	# The finish bonus: once per structure, and only once it is actually rubble.
 	# The structure is parented directly rather than through _add_structure, so
 	# it never joins the live corridor.
-	# A fence run is 23 parts, so it clears FINISH_MIN_PARTS but not
-	# BIG_STRUCTURE - the gold case.
-	var fin := PropBuilder.fence_run(Vector3(620, 0, 0), Vector3(628, 0, 0))
+	# A 30m fence run is about 50 parts, so it clears FINISH_MIN_PARTS but not
+	# BIG_STRUCTURE - the gold case. It was an 8m run, which fell under the
+	# floor the moment the fence was rebuilt as barbed wire with fewer, wider
+	# spaced posts, and the gate correctly said the bonus never paid.
+	var fin := PropBuilder.fence_run(Vector3(620, 0, 0), Vector3(650, 0, 0))
 	add_child(fin)
 	_pay_finish(fin)
 	if not probe_field.studs.is_empty():
 		fails.append("the finish bonus paid on an intact structure")
 	probe_field.clear_all()
+	# The radius has to cover the WHOLE prop. At 6m it reached the first few
+	# metres of a 30m fence, ran out of bricks in range, and left the structure
+	# standing - so the bonus correctly never paid and the gate correctly said
+	# so. That was the test being too small, not the code being wrong.
 	while not fin.is_rubble():
-		if fin.tear(fin.global_position + Vector3(0, 0.6, 0), 6.0, debris_root, 40).is_empty():
+		if fin.tear(fin.global_position + Vector3(0, 0.6, 0), 60.0, debris_root, 40).is_empty():
 			break
 	_pay_finish(fin)
 	var after_first := probe_field.studs.size()

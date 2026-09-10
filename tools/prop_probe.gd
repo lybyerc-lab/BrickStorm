@@ -85,6 +85,9 @@ func _run() -> void:
 		["tyre_stack", PropBuilder.tyre_stack(Vector3.ZERO), 3.4, 1.4, 0.5],
 		["mailbox", PropBuilder.mailbox(Vector3.ZERO, 0.0), 3.6, 1.6, 0.9],
 		["barrel", PropBuilder.barrel(Vector3.ZERO), 3.6, 1.5, 0.9],
+		["power_line", PropBuilder.power_line(Vector3(-21, 0, 0), Vector3(21, 0, 0)), 34.0, 11.0, 4.0],
+		["grain_elevator", PropBuilder.grain_elevator(Vector3.ZERO, 0.0), 30.0, 11.0, 6.0],
+		["aermotor", PropBuilder.windmill(Vector3.ZERO), 15.0, 5.0, 4.0],
 	]
 	for shot in shots:
 		var st: Structure = shot[1]

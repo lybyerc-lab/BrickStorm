@@ -28,6 +28,14 @@ const H := 0.6      # brick height    (BrickLib.BRICK_H)
 #   with studs on it reads as unfinished; that is what tiles are for.
 # - Part variety costs a draw call per kind per prop (see BS:DESTRUCTION:
 #   STRUCTURE), so a prop uses a small deliberate palette, not everything.
+# - THE SET HAS TO SAY WHERE IT IS, not just what it is. A barn and a silo make
+#   any farm anywhere; the Great Plains specifically are utility poles marching
+#   to a flat horizon, a grain elevator on the skyline, a lattice aermotor with
+#   a tail vane, barbed wire on leaning posts, and trees only in shelterbelt
+#   rows. The director's note on the first hybrid build was that it did not
+#   scream Oklahoma - it had a white picket fence and a Dutch windmill in it,
+#   which are the wrong continent twice over. A prop that could stand in any
+#   farmyard on earth is doing half its job.
 # ============================================================================
 static func _wall(st: Structure, start: Vector3, dir: Vector3, length_studs: int,
 		courses: int, color: Color, brick_len: int = 4, depth: int = 2) -> void:
@@ -292,26 +300,105 @@ static func tree(pos: Vector3, scale_f: float = 1.0) -> Structure:
 
 
 static func fence_run(from: Vector3, to: Vector3) -> Structure:
+	# BARBED WIRE ON WEATHERED POSTS. This was a white picket fence, which is
+	# New England suburbia - out on the plains it is a leaning wooden post and
+	# three strands of wire, and nothing else. The director's note on the first
+	# hybrid build was that the world did not read as Oklahoma, and a white
+	# picket fence in frame is one of the reasons.
 	var st := Structure.new()
 	st.position = from
 	var delta := to - from
 	var length := delta.length()
 	var dir := delta.normalized()
 	var yaw := atan2(dir.x, dir.z)
-	var posts := int(length / 2.0)
+	var posts := int(length / 2.4)
 	for i in range(posts + 1):
-		var p := dir * (float(i) * 2.0)
-		st.add_brick(1, 1, 1.2, BrickLib.C_WHITE, Vector3(p.x, 0.6, p.z), Vector3(0, yaw, 0), false)
-		# A picket is pointed. Two cheese slopes back to back is how you point
-		# one, and it costs a single extra part per post.
-		for cs in [-1.0, 1.0]:
-			st.add_part(BrickLib.PART_CHEESE, 1, 1, 0.22, BrickLib.C_WHITE,
-				Vector3(p.x, 1.31, p.z), Vector3(0, yaw + (0.0 if cs > 0.0 else PI), 0), false)
+		var p := dir * (float(i) * 2.4)
+		# Posts lean. A dead-straight fence line reads as a fence you bought;
+		# a leaning one reads as a fence that has been standing in the wind.
+		var lean: float = fmod(float(i) * 0.37, 0.18) - 0.09
+		st.add_part(BrickLib.PART_ROUND, 1, 1, 1.35, BrickLib.C_BROWN,
+			Vector3(p.x, 0.66, p.z), Vector3(lean, yaw, lean * 0.6), false)
 		if i < posts:
-			var m := dir * (float(i) * 2.0 + 1.0)
-			# Rails are tiles: a fence rail has no studs on it.
-			st.add_part(BrickLib.PART_TILE, 4, 1, 0.16, BrickLib.C_WHITE, Vector3(m.x, 0.95, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
-			st.add_part(BrickLib.PART_TILE, 4, 1, 0.16, BrickLib.C_WHITE, Vector3(m.x, 0.55, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
+			var m := dir * (float(i) * 2.4 + 1.2)
+			# Three strands. Galvanised, so LIGHT grey - barbed wire really is,
+			# and near-black strands tore off into a blizzard of dark confetti
+			# that read as holes punched in the field.
+			for h in [1.15, 0.82, 0.49]:
+				st.add_part(BrickLib.PART_TILE, 5, 1, 0.07, BrickLib.C_LGREY,
+					Vector3(m.x, h, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
+	st.finish()
+	return st
+
+
+# A line of utility poles marching to a flat horizon. See the PLACE invariant
+# on BS:BUILD:TOWN - this prop exists to answer "where", not "what".
+static func power_line(from: Vector3, to: Vector3) -> Structure:
+	var st := Structure.new()
+	st.position = from
+	var delta := to - from
+	var length := delta.length()
+	var dir := delta.normalized()
+	var yaw := atan2(dir.x, dir.z)
+	var spans := maxi(1, int(length / 14.0))
+	for i in range(spans + 1):
+		var p := dir * (float(i) * 14.0)
+		# The pole, and the crossarm with its insulators.
+		st.add_part(BrickLib.PART_ROUND, 1, 1, 7.2, BrickLib.C_BROWN,
+			Vector3(p.x, 3.6, p.z), Vector3(0, yaw, 0), false)
+		# `yaw` puts a tile's long axis ACROSS the run; `yaw + PI/2` puts it
+		# along. The crossarm had the wire's rotation and lay parallel to the
+		# line it was supposed to be carrying.
+		st.add_part(BrickLib.PART_TILE, 6, 1, 0.22, BrickLib.C_BROWN,
+			Vector3(p.x, 6.85, p.z), Vector3(0, yaw, 0), false)
+		for sx in [-0.85, 0.0, 0.85]:
+			var off := Vector3(cos(yaw) * sx, 0, -sin(yaw) * sx)
+			st.add_part(BrickLib.PART_ROUND, 1, 1, 0.28, BrickLib.C_LGREY,
+				Vector3(p.x + off.x, 7.1, p.z + off.z), Vector3.ZERO, false)
+		if i < spans:
+			# The wires. TWO SEGMENTS PER SPAN, each a full half-span long and
+			# tilted, so the line sags between poles instead of being drawn
+			# taut - and so it actually REACHES the poles. A single 7.5m tile
+			# in a 14m span left three metres of air at each end and read as a
+			# plank floating in the sky, which is what the first render showed.
+			var d0 := float(i) * 14.0
+			var tilt := atan2(0.30, 7.0)
+			for sx2 in [-0.85, 0.0, 0.85]:
+				var off2 := Vector3(cos(yaw) * sx2, 0, -sin(yaw) * sx2)
+				for half in range(2):
+					var c := dir * (d0 + 3.5 + float(half) * 7.0)
+					st.add_part(BrickLib.PART_TILE, 14, 1, 0.06, BrickLib.C_DGREY,
+						Vector3(c.x + off2.x, 6.88, c.z + off2.z),
+						Vector3(0, yaw + PI * 0.5, tilt * (1.0 if half == 0 else -1.0)),
+						false)
+	st.finish()
+	return st
+
+
+# A grain elevator: the concrete headhouse-and-silos block that stands on the
+# skyline of every plains town, visible from further away than anything else.
+static func grain_elevator(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	var cells := 4
+	var courses := 40
+	var ch := 0.42
+	for c in range(cells):
+		var x: float = (float(c) - float(cells - 1) * 0.5) * 2.6
+		# Each cell is a stack of plate-thick rings, so the funnel can take it
+		# down in courses like the silo rather than in four lumps.
+		for k in range(courses):
+			st.add_part(BrickLib.PART_ROUND, 5, 5, ch, BrickLib.C_LGREY,
+				Vector3(x, ch * 0.5 + float(k) * ch, 0), Vector3.ZERO, k == courses - 1)
+	# The headhouse on top, where the leg and the spouts live. An elevator is
+	# far taller than it is wide - that is the whole silhouette, and at ten
+	# metres on a twelve-metre footprint it read as a squat bank of tanks.
+	var top := float(courses) * ch
+	st.add_brick(int(float(cells) * 5.4), 5, 3.0, BrickLib.C_LGREY,
+		Vector3(0, top + 1.5, 0))
+	st.add_part(BrickLib.PART_TILE, int(float(cells) * 5.4), 5, BrickLib.PLATE_H,
+		BrickLib.C_DGREY, Vector3(0, top + 3.1, 0))
 	st.finish()
 	return st
 
@@ -360,22 +447,78 @@ static func drive_in_screen(pos: Vector3, yaw: float = 0.0) -> Structure:
 
 
 static func windmill(pos: Vector3) -> Structure:
+	# AN AERMOTOR, not a Dutch mill. This was a tapering round tower with six
+	# long sails, which is Holland; the windmill on a plains farm is a splayed
+	# lattice steel tower with a many-bladed fan and a tail vane keeping it
+	# pointed into the wind, pumping water for stock. It is one of the most
+	# recognisable silhouettes out there and it was the wrong one.
 	var st := Structure.new()
 	st.position = pos
-	# A tapering round tower. Four boxes per course arranged in a square was
-	# never going to read as a mill.
-	for c in range(4):
-		var wide := 6 - c
-		st.add_part(BrickLib.PART_ROUND, wide, wide, H * 2.0, BrickLib.C_LGREY,
-			Vector3(0, float(c) * H * 2.0 + H, 0))
-	st.add_part(BrickLib.PART_CONE, 3, 3, 0.7, BrickLib.C_DGREY, Vector3(0, 8.0 * H + 0.35, 0))
-	for i in range(6):
-		var a: float = TAU * float(i) / 6.0
-		# Sail slats are tiles - flat, smooth, no studs.
-		st.add_part(BrickLib.PART_TILE, 4, 1, 0.14, BrickLib.C_WHITE,
-			Vector3(cos(a) * 1.0, 5.4 + sin(a) * 1.0, 0.6), Vector3(0, 0, a), false)
+	var tower := 9.0
+	var legs := 4
+	var steps := 7
+	for i in range(legs):
+		var a: float = TAU * float(i) / float(legs) + PI * 0.25
+		for k in range(steps):
+			var t0: float = float(k) / float(steps)
+			var t1: float = float(k + 1) / float(steps)
+			# The legs splay: wide at the ground, gathered at the platform.
+			var r0: float = lerpf(1.45, 0.34, t0)
+			var r1: float = lerpf(1.45, 0.34, t1)
+			var y0: float = t0 * tower
+			var y1: float = t1 * tower
+			var mid := Vector3(cos(a) * (r0 + r1) * 0.5, (y0 + y1) * 0.5,
+				sin(a) * (r0 + r1) * 0.5)
+			# Lean each segment along the leg, so the tower tapers instead of
+			# stepping. atan of the horizontal run over the rise.
+			var lean := atan2(r0 - r1, y1 - y0)
+			st.add_part(BrickLib.PART_ROUND, 1, 1, (y1 - y0) * 1.06,
+				BrickLib.C_LGREY, mid, Vector3(sin(a) * lean, -a, cos(a) * lean), false)
+	# Horizontal bracing rings. A lattice tower without them reads as four
+	# sticks leaning together.
+	for k in range(1, 4):
+		var t: float = float(k) / 4.0
+		var r: float = lerpf(1.45, 0.34, t)
+		for i in range(legs):
+			var a2: float = TAU * (float(i) + 0.5) / float(legs) + PI * 0.25
+			st.add_part(BrickLib.PART_TILE, int(maxf(2.0, r * 4.4)), 1, 0.1,
+				BrickLib.C_LGREY,
+				Vector3(cos(a2) * r * 0.92, t * tower, sin(a2) * r * 0.92),
+				Vector3(0, -a2 + PI * 0.5, 0), false)
+	# DIAGONAL BRACING. Four legs and some horizontal rings still read as a
+	# stack of tubes; the Xs between them are what make it a lattice.
+	for k in range(4):
+		var t0: float = float(k) / 4.0
+		var t1: float = float(k + 1) / 4.0
+		var r0: float = lerpf(1.45, 0.34, t0)
+		var r1: float = lerpf(1.45, 0.34, t1)
+		for i in range(legs):
+			var a4: float = TAU * (float(i) + 0.5) / float(legs) + PI * 0.25
+			var run: float = (r0 + r1) * 0.5 * 1.5
+			var rise: float = (t1 - t0) * tower
+			for sgn in [-1.0, 1.0]:
+				st.add_part(BrickLib.PART_TILE,
+					int(maxf(3.0, sqrt(run * run + rise * rise) * 2.0)), 1, 0.08,
+					BrickLib.C_LGREY,
+					Vector3(cos(a4) * (r0 + r1) * 0.5, (t0 + t1) * 0.5 * tower,
+						sin(a4) * (r0 + r1) * 0.5),
+					Vector3(0, -a4 + PI * 0.5, sgn * atan2(rise, run)), false)
+
+	# The fan: a hub, a ring of blades, and the tail vane behind it.
+	var hub := Vector3(0, tower + 0.55, 0.0)
+	st.add_part(BrickLib.PART_ROUND, 2, 2, 0.3, BrickLib.C_DGREY,
+		hub, Vector3(PI * 0.5, 0, 0), false)
+	for i in range(12):
+		var a3: float = TAU * float(i) / 12.0
+		st.add_part(BrickLib.PART_TILE, 3, 1, 0.07, BrickLib.C_WHITE,
+			hub + Vector3(cos(a3) * 0.78, sin(a3) * 0.78, 0.02),
+			Vector3(0, 0, a3 + PI * 0.5), false)
+	st.add_part(BrickLib.PART_TILE, 5, 1, 0.1, BrickLib.C_LGREY,
+		hub + Vector3(0, -0.1, 1.35), Vector3(PI * 0.5, 0, 0), false)
 	st.finish()
 	return st
+
+
 # The gag prop. Smashing it is the joke; see BS:COMEDY:GAGS.
 static func outhouse(pos: Vector3) -> Structure:
 	var st := Structure.new()
