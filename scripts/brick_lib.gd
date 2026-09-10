@@ -64,93 +64,464 @@ const CHAMFER := 0.035
 
 
 static func brick_mesh() -> ArrayMesh:
-	if _brick_mesh != null:
-		return _brick_mesh
-	var c := CHAMFER
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-
-	# Six inset faces, twelve edge chamfers, eight corner triangles.
-	for axis in range(3):
-		for dir in [-1.0, 1.0]:
-			var n := Vector3.ZERO
-			n[axis] = dir
-			var u := Vector3.ZERO
-			u[(axis + 1) % 3] = 1.0
-			var v := Vector3.ZERO
-			v[(axis + 2) % 3] = 1.0
-			var centre := n * 0.5
-			var q := [
-				centre + (u * -1.0 + v * -1.0) * (0.5 - c),
-				centre + (u * 1.0 + v * -1.0) * (0.5 - c),
-				centre + (u * 1.0 + v * 1.0) * (0.5 - c),
-				centre + (u * -1.0 + v * 1.0) * (0.5 - c),
-			]
-			_quad(st, q[0], q[1], q[2], q[3], n, bool(dir > 0.0))
-
-	# Edge chamfers: for each pair of axes, the four edges they share.
-	for a in range(3):
-		for b in range(a + 1, 3):
-			var other := 3 - a - b
-			for sa in [-1.0, 1.0]:
-				for sb in [-1.0, 1.0]:
-					var na := Vector3.ZERO
-					na[a] = sa
-					var nb := Vector3.ZERO
-					nb[b] = sb
-					var e := Vector3.ZERO
-					e[other] = 1.0
-					var p0 := na * 0.5 + nb * (0.5 - c) - e * (0.5 - c)
-					var p1 := na * 0.5 + nb * (0.5 - c) + e * (0.5 - c)
-					var p2 := na * (0.5 - c) + nb * 0.5 + e * (0.5 - c)
-					var p3 := na * (0.5 - c) + nb * 0.5 - e * (0.5 - c)
-					var nn := (na + nb).normalized()
-					_quad(st, p0, p1, p2, p3, nn, bool(sa * sb > 0.0))
-
-	# Corners.
-	for sx in [-1.0, 1.0]:
-		for sy in [-1.0, 1.0]:
-			for sz in [-1.0, 1.0]:
-				var s3 := Vector3(sx, sy, sz)
-				var a0 := Vector3(sx * 0.5, sy * (0.5 - c), sz * (0.5 - c))
-				var b0 := Vector3(sx * (0.5 - c), sy * 0.5, sz * (0.5 - c))
-				var c0 := Vector3(sx * (0.5 - c), sy * (0.5 - c), sz * 0.5)
-				var nn := s3.normalized()
-				var flip: bool = sx * sy * sz < 0.0
-				_tri(st, a0, b0, c0, nn, flip)
-
-	st.generate_tangents()
-	_brick_mesh = st.commit()
+	# The brick is a square profile through the generic part builder. It used
+	# to be a hand-written "six inset faces, twelve edge chamfers, eight corner
+	# triangles", and _prism_mesh is that same construction generalised to any
+	# profile - the two were measured against each other before this one was
+	# deleted: same 44 triangles, same 5.750 surface area, same 0.9929 volume,
+	# same bounds. See tools/part_probe.gd, which still asserts those numbers.
+	# Keeping both would have meant two copies of the chamfer rules, and this
+	# project has already been bitten by exactly that with the plastic material.
+	if _brick_mesh == null:
+		_brick_mesh = part_mesh(PART_BRICK)
 	return _brick_mesh
 
 
 static func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3,
-		n: Vector3, flip: bool) -> void:
-	if flip:
-		_tri(st, a, b, c, n, false)
-		_tri(st, a, c, d, n, false)
-	else:
-		_tri(st, a, c, b, n, false)
-		_tri(st, a, d, c, n, false)
+		n: Vector3) -> void:
+	# Both triangles split along a-c. There used to be a `flip` branch that
+	# chose between (a,b,c)+(a,c,d) and (a,c,b)+(a,d,c); those are the same two
+	# triangles in opposite order, and wind_cw re-orders them anyway, so it was
+	# dead code that only made the winding look hand-managed.
+	_tri(st, a, b, c, n)
+	_tri(st, a, c, d, n)
 
 
-# Winding is DERIVED, not asserted. Hand-tracking the orientation of 44
-# triangles across six faces, twelve edges and eight corners got 16 of them
-# backwards, and a backwards face means you see straight through the brick.
-# The part is convex and every face here is supplied with its true outward
-# normal, so the geometry can simply be asked which way round it goes.
-static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
-		n: Vector3, _flip: bool) -> void:
-	var p1 := b
-	var p2 := c
-	if (b - a).cross(c - a).dot(n) < 0.0:
-		p1 = c
-		p2 = b
-	for p in [a, p1, p2]:
+static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, n: Vector3) -> void:
+	var p := [a, b, c]
+	for i in wind_cw(a, b, c, n):
 		st.set_normal(n)
-		st.set_uv(Vector2(p.x + 0.5, p.z + 0.5))
-		st.add_vertex(p)
+		st.set_uv(Vector2(p[i].x + 0.5, p[i].z + 0.5))
+		st.add_vertex(p[i])
 # [BS:BUILD:CHAMFER:END]
+
+
+# ============================================================================
+# [BS:BUILD:WINDING]
+# Purpose: The single place that decides which way round a triangle goes.
+# Invariants:
+# - GODOT'S FRONT FACE IS CLOCKWISE SEEN FROM THE FRONT. Not counter-clockwise.
+#   Every generated mesh in this game - brick, head, torso - was wound the
+#   other way, so back-face culling threw away the surface nearest the camera
+#   and drew the FAR one instead. It never looked obviously broken because a
+#   closed convex part still fills its silhouette, but the depth, the
+#   silhouette and the lighting were all coming off the wrong surface, and both
+#   printed parts had empirical "offsets" in their shaders that were really
+#   compensating for this. Proven by tools/winding_probe.gd, which renders one
+#   quad wound each way and reports which survives culling, and then puts a
+#   marker inside a real brick to show it is see-through.
+# - WINDING IS DERIVED FROM THE OUTWARD NORMAL, NEVER TRACKED BY HAND. Doing it
+#   by hand got 16 of the brick's 44 triangles backwards, and then turned the
+#   head inside out a second time from a single sign change.
+# - Every mesh builder in this file goes through here. That is the point: the
+#   convention was wrong in three separate copies of the same three lines, and
+#   one place cannot drift from itself.
+# ============================================================================
+static func wind_cw(p0: Vector3, p1: Vector3, p2: Vector3, n: Vector3) -> Array:
+	# (p1-p0) x (p2-p0) points along n exactly when the vertices run
+	# counter-clockwise seen from the +n side, which is the order Godot culls.
+	if (p1 - p0).cross(p2 - p0).dot(n) > 0.0:
+		return [0, 2, 1]
+	return [0, 1, 2]
+# [BS:BUILD:WINDING:END]
+
+# ============================================================================
+# [BS:BUILD:PARTS]
+# Purpose: The part library. A LEGO model is not made of boxes - it is made of
+#   slopes, tiles, arches, round bricks and cones, and the shapes ARE the look.
+# Invariants:
+# - EVERY PART IS A UNIT PART. It lives in the [-0.5, 0.5] cube and is scaled
+#   per instance, exactly like the brick, so all parts of one kind still batch
+#   into a single MultiMesh. A part that needed its own mesh per size would
+#   multiply the draw calls the batching exists to remove.
+# - ONE CHAMFER IMPLEMENTATION. Every straight-sided part comes out of
+#   _prism_mesh, which generalises what the brick mesh used to do by hand:
+#   inset faces, a chamfer strip along every sharp edge, and a patch at every
+#   corner. The brick itself is now a square profile through the same builder,
+#   so there is no second copy of the chamfer rules to drift.
+# - THE SLOPE ANGLE IS NOT DECORATION. BRICK_H / STUD is 0.6 / 0.5 = 1.2, which
+#   is the real 9.6mm / 8mm ratio, so a unit wedge scaled one stud deep by one
+#   brick tall lands on the real part's angle without a magic number.
+# - Studs follow the part, not the bounding box. A slope carries one row on its
+#   top ledge, a tile and a cheese slope carry none, a round brick carries one
+#   in the middle. Studding a slope over its whole footprint is exactly the
+#   tell that a roof was faked from boxes.
+# ============================================================================
+const PART_BRICK     := 0
+const PART_SLOPE     := 1
+const PART_SLOPE_INV := 2
+const PART_CHEESE    := 3
+const PART_TILE      := 4
+const PART_ROUND     := 5
+const PART_CONE      := 6
+const PART_ARCH      := 7
+const PART_COUNT     := 8
+
+# How much of a slope's depth stays flat at the top. This is the ledge the
+# studs sit on and it is what separates a slope brick from a cheese slope.
+# HALF, because a real 45-degree slope brick is TWO studs deep: one stud of
+# slope and one stud of studded flat behind it. That flat stud is what the
+# next course up sits on when a roof is stepped, and it is the reason a LEGO
+# roof has no exposed studs anywhere on its face. At a third of the depth the
+# courses stepped in one stud and left every ledge showing, which is what a
+# roof faked out of slabs looks like - just with more steps.
+const SLOPE_LEDGE := 0.5
+# A tile's top edge is visibly rounder than a brick's - that rounding is the
+# whole reason a tiled floor reads as tiled and not as a wall lying down.
+const TILE_CHAMFER := 0.09
+const CONE_TOP := 0.24
+const ROUND_SEG := 16
+
+static var _part_meshes: Array = []
+
+
+static func part_name(kind: int) -> String:
+	match kind:
+		PART_BRICK: return "brick"
+		PART_SLOPE: return "slope"
+		PART_SLOPE_INV: return "inverted slope"
+		PART_CHEESE: return "cheese slope"
+		PART_TILE: return "tile"
+		PART_ROUND: return "round brick"
+		PART_CONE: return "cone"
+		PART_ARCH: return "arch"
+	return "unknown"
+
+
+static func part_mesh(kind: int) -> ArrayMesh:
+	if _part_meshes.is_empty():
+		_part_meshes.resize(PART_COUNT)
+	if kind < 0 or kind >= PART_COUNT:
+		kind = PART_BRICK
+	if _part_meshes[kind] != null:
+		return _part_meshes[kind]
+	var m: ArrayMesh = null
+	match kind:
+		PART_BRICK:
+			m = _prism_mesh(_square_profile(), CHAMFER, false)
+		PART_TILE:
+			m = _prism_mesh(_square_profile(), TILE_CHAMFER, false)
+		PART_SLOPE:
+			m = _prism_mesh(_slope_profile(SLOPE_LEDGE, false), CHAMFER, false)
+		PART_SLOPE_INV:
+			m = _prism_mesh(_slope_profile(SLOPE_LEDGE, true), CHAMFER, false)
+		PART_CHEESE:
+			m = _prism_mesh(_slope_profile(0.0, false), CHAMFER, false)
+		PART_ARCH:
+			m = _prism_mesh(_arch_profile(), CHAMFER, true)
+		PART_ROUND:
+			m = _revolve_mesh(0.5, 0.5)
+		PART_CONE:
+			m = _revolve_mesh(0.5, CONE_TOP)
+	_part_meshes[kind] = m
+	return m
+
+
+# Where the studs go, in unit-part space: x and z in [-0.5, 0.5], y at the top.
+# Structure multiplies these by the instance size, so one table serves a 1x1
+# and a 6x2 of the same kind.
+static func part_stud_slots(kind: int, sw: int, sd: int) -> Array:
+	var out: Array = []
+	match kind:
+		PART_TILE, PART_CHEESE:
+			return out                      # smooth parts. That is the point.
+		PART_ROUND, PART_CONE:
+			out.append(Vector3(0.0, 0.5, 0.0))
+			return out
+		PART_SLOPE:
+			# ONE ROW, on the ledge - not a full footprint of studs.
+			var z := -0.5 + SLOPE_LEDGE * 0.5
+			for x in range(sw):
+				out.append(Vector3((float(x) + 0.5) / float(sw) - 0.5, 0.5, z))
+			return out
+	for x in range(sw):
+		for z in range(sd):
+			out.append(Vector3((float(x) + 0.5) / float(sw) - 0.5, 0.5,
+				(float(z) + 0.5) / float(sd) - 0.5))
+	return out
+
+
+# --- profiles ---------------------------------------------------------------
+# A profile is a list of [Vector2(u, y), smooth]. It runs counter-clockwise, so
+# the outward normal of the edge leaving a vertex is (d.y, -d.x). `smooth`
+# marks a vertex where the surface carries on round rather than turning a
+# corner: no chamfer strip is cut there and the two faces share a normal, which
+# is how the arch's underside stays a curve instead of a run of facets.
+
+static func _square_profile() -> Array:
+	return [
+		[Vector2(-0.5, -0.5), false], [Vector2(0.5, -0.5), false],
+		[Vector2(0.5, 0.5), false], [Vector2(-0.5, 0.5), false],
+	]
+
+
+# High at -Z, falling to the bottom front edge at +Z. `ledge` is the flat run
+# kept at the top; at 0 it is a cheese slope. Inverted mirrors it in y, giving
+# the part that goes under an eave: full studded top, cutaway underneath.
+static func _slope_profile(ledge: float, inverted: bool) -> Array:
+	var pts: Array = []
+	if inverted:
+		pts = [
+			Vector2(-0.5, -0.5), Vector2(0.5 - ledge, -0.5),
+			Vector2(0.5, 0.5), Vector2(-0.5, 0.5),
+		]
+	else:
+		pts = [
+			Vector2(-0.5, -0.5), Vector2(0.5, -0.5),
+			Vector2(-0.5 + ledge, 0.5), Vector2(-0.5, 0.5),
+		]
+	var out: Array = []
+	for p in pts:
+		# Drop a vertex that a zero ledge has collapsed onto its neighbour,
+		# otherwise the cheese slope carries a zero-length top edge and the
+		# chamfer strip built on it is degenerate.
+		if not out.is_empty() and (out[-1][0] as Vector2).distance_to(p) < 1e-5:
+			continue
+		out.append([p, false])
+	return out
+
+
+# An arch brick: solid legs, an elliptical opening between them. This one is
+# extruded along Z, because an arch spans its LENGTH and length is x.
+static func _arch_profile() -> Array:
+	var rx := 0.30                    # half the opening, in x
+	var rh := 0.74                    # opening height
+	var out: Array = []
+	out.append([Vector2(-0.5, -0.5), false])
+	var seg := 14
+	for k in range(seg + 1):
+		var th: float = PI - PI * float(k) / float(seg)
+		# The springing points are corners; everything between them is one
+		# continuous curve.
+		out.append([Vector2(cos(th) * rx, -0.5 + sin(th) * rh), k > 0 and k < seg])
+	out.append([Vector2(0.5, -0.5), false])
+	out.append([Vector2(0.5, 0.5), false])
+	out.append([Vector2(-0.5, 0.5), false])
+	return out
+
+
+# --- builders ---------------------------------------------------------------
+
+static func _prism_pt(u: float, y: float, t: float, span_x: bool) -> Vector3:
+	return Vector3(u, y, t) if span_x else Vector3(t, y, u)
+
+
+static func _prism_n(nu: float, ny: float, span_x: bool) -> Vector3:
+	return Vector3(nu, ny, 0.0) if span_x else Vector3(0.0, ny, nu)
+
+
+# The generic chamfered extrusion. `profile` is in (u, y); it is swept along
+# the remaining horizontal axis from -0.5 to +0.5. This is the brick's old
+# "six faces, twelve edges, eight corners" written once for any profile.
+static func _prism_mesh(profile: Array, c: float, span_x: bool) -> ArrayMesh:
+	var n := profile.size()
+	var pos: Array = []
+	var smooth: Array = []
+	for e in profile:
+		pos.append(e[0] as Vector2)
+		smooth.append(bool(e[1]))
+	# Force counter-clockwise so the edge normals below point outward. Getting
+	# this wrong turns the whole part inside out, and it is exactly the class
+	# of mistake BS:BUILD:WINDING exists to make impossible to make by hand.
+	var area := 0.0
+	for i in range(n):
+		var a: Vector2 = pos[i]
+		var b: Vector2 = pos[(i + 1) % n]
+		area += a.x * b.y - b.x * a.y
+	if area < 0.0:
+		pos.reverse()
+		smooth.reverse()
+
+	var dir: Array = []
+	var en: Array = []
+	for i in range(n):
+		var d: Vector2 = (pos[(i + 1) % n] - pos[i]).normalized()
+		dir.append(d)
+		en.append(Vector2(d.y, -d.x))
+	var bis: Array = []
+	for i in range(n):
+		var b: Vector2 = (en[(i - 1 + n) % n] + en[i])
+		bis.append(en[i] if b.length() < 1e-6 else b.normalized())
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var t := 0.5 - c
+	var axis: Vector3 = Vector3(0, 0, 1) if span_x else Vector3(1, 0, 0)
+
+	# Start and end of each edge's flat run, and the normal at each end.
+	var sa: Array = []
+	var sb: Array = []
+	for i in range(n):
+		var j := (i + 1) % n
+		sa.append(pos[i] if smooth[i] else pos[i] + dir[i] * c)
+		sb.append(pos[j] if smooth[j] else pos[j] - dir[i] * c)
+
+	# Lateral faces.
+	for i in range(n):
+		var j := (i + 1) % n
+		var na: Vector3 = _prism_n(bis[i].x, bis[i].y, span_x) if smooth[i] \
+			else _prism_n(en[i].x, en[i].y, span_x)
+		var nb: Vector3 = _prism_n(bis[j].x, bis[j].y, span_x) if smooth[j] \
+			else _prism_n(en[i].x, en[i].y, span_x)
+		var p0 := _prism_pt(sa[i].x, sa[i].y, -t, span_x)
+		var p1 := _prism_pt(sb[i].x, sb[i].y, -t, span_x)
+		var p2 := _prism_pt(sb[i].x, sb[i].y, t, span_x)
+		var p3 := _prism_pt(sa[i].x, sa[i].y, t, span_x)
+		_emit_tri(st, p0, p1, p2, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, na, nb, nb)
+		_emit_tri(st, p0, p2, p3, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, na, nb, na)
+
+	# Chamfer strip along every sharp edge that runs the length of the part.
+	for i in range(n):
+		if smooth[i]:
+			continue
+		var pa: Vector2 = sb[(i - 1 + n) % n]
+		var pb: Vector2 = sa[i]
+		if pa.distance_to(pb) < 1e-6:
+			continue
+		var nn := _prism_n(bis[i].x, bis[i].y, span_x)
+		var q0 := _prism_pt(pa.x, pa.y, -t, span_x)
+		var q1 := _prism_pt(pb.x, pb.y, -t, span_x)
+		var q2 := _prism_pt(pb.x, pb.y, t, span_x)
+		var q3 := _prism_pt(pa.x, pa.y, t, span_x)
+		_emit_tri(st, q0, q1, q2, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
+		_emit_tri(st, q0, q2, q3, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
+
+	# Where the cap outline turns each corner: the intersection of the two
+	# neighbouring edges offset inward by the chamfer. NOT each edge's own
+	# endpoint pushed in - that only lands in the same place when the corner is
+	# a right angle, which is why it worked on the brick and produced a cap
+	# outline that crossed itself on every slope. The triangulator rejected
+	# those outright and the fallback fan then filled a shape that was not the
+	# part. Miter points also collapse the corner patch to the single triangle
+	# the brick always had.
+	var miter: Array = []
+	for i in range(n):
+		var e1: Vector2 = en[(i - 1 + n) % n]
+		var e2: Vector2 = en[i]
+		var d1: float = (pos[i] as Vector2).dot(e1) - c
+		var d2: float = (pos[i] as Vector2).dot(e2) - c
+		var det: float = e1.x * e2.y - e1.y * e2.x
+		if absf(det) < 1e-6:
+			miter.append(pos[i] - e2 * c)      # the edges run on; no corner
+		else:
+			miter.append(Vector2((d1 * e2.y - d2 * e1.y) / det,
+				(e1.x * d2 - e2.x * d1) / det))
+
+	for s_end in [-1.0, 1.0]:
+		# Typed explicitly: an untyped loop variable makes every expression it
+		# touches a Variant and GDScript then refuses to infer the locals below.
+		var s: float = s_end
+		var cap_n: Vector3 = axis * s
+		# Strip joining each lateral face to the end cap.
+		for i in range(n):
+			var j := (i + 1) % n
+			var m0: Vector2 = miter[i]
+			var m1: Vector2 = miter[j]
+			var nn: Vector3 = (_prism_n(en[i].x, en[i].y, span_x) + cap_n).normalized()
+			var q0 := _prism_pt(m0.x, m0.y, s * 0.5, span_x)
+			var q1 := _prism_pt(m1.x, m1.y, s * 0.5, span_x)
+			var q2 := _prism_pt(sb[i].x, sb[i].y, s * t, span_x)
+			var q3 := _prism_pt(sa[i].x, sa[i].y, s * t, span_x)
+			_emit_tri(st, q0, q1, q2, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
+			_emit_tri(st, q0, q2, q3, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
+		# The triangle closing each sharp corner, where the cap, the two cap
+		# strips and the edge chamfer all run out. A smooth vertex has no edge
+		# chamfer, so the two strips already meet and there is nothing to fill.
+		for i in range(n):
+			if smooth[i]:
+				continue
+			var pa: Vector2 = sb[(i - 1 + n) % n]
+			var pb: Vector2 = sa[i]
+			if pa.distance_to(pb) < 1e-6:
+				continue
+			var m: Vector2 = miter[i]
+			var nn: Vector3 = (_prism_n(bis[i].x, bis[i].y, span_x) + cap_n).normalized()
+			_emit_tri(st,
+				_prism_pt(m.x, m.y, s * 0.5, span_x),
+				_prism_pt(pb.x, pb.y, s * t, span_x),
+				_prism_pt(pa.x, pa.y, s * t, span_x),
+				Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
+
+		# The cap itself: the profile mitred inward by the chamfer.
+		var poly := PackedVector2Array()
+		for i in range(n):
+			var m: Vector2 = miter[i]
+			if poly.size() > 0 and (poly[poly.size() - 1] as Vector2).distance_to(m) < 1e-6:
+				continue
+			poly.append(m)
+		if poly.size() > 2 and (poly[0] as Vector2).distance_to(poly[poly.size() - 1]) < 1e-6:
+			poly.remove_at(poly.size() - 1)
+		var idx := Geometry2D.triangulate_polygon(poly)
+		if idx.is_empty():
+			# A fan across a shape the triangulator rejected fills the wrong
+			# area, so this is an error, not a warning to be scrolled past.
+			push_error("part cap outline is not a simple polygon (%d pts): %s"
+				% [poly.size(), poly])
+		for k in range(0, idx.size(), 3):
+			var q0 := _prism_pt(poly[idx[k]].x, poly[idx[k]].y, s * 0.5, span_x)
+			var q1 := _prism_pt(poly[idx[k + 1]].x, poly[idx[k + 1]].y, s * 0.5, span_x)
+			var q2 := _prism_pt(poly[idx[k + 2]].x, poly[idx[k + 2]].y, s * 0.5, span_x)
+			_emit_tri(st, q0, q1, q2, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO,
+				cap_n, cap_n, cap_n)
+
+	# NO generate_tangents(). These parts carry no UVs - nothing samples a
+	# texture on them and there are no normal maps - and asking SurfaceTool to
+	# derive tangents from all-zero UVs CORRUPTS THE NORMALS it was given. That
+	# is not a theory: it is what left the torso print invisible for two rounds
+	# of debugging. See BS:BUILD:TORSO.
+	return st.commit()
+
+
+# A round brick or a cone: the same sweep, with the top radius as the only
+# difference between them. Chamfered at both rims like every other part.
+static func _revolve_mesh(r_bot: float, r_top: float) -> ArrayMesh:
+	var c := CHAMFER
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# The side runs from the bottom rim to the top rim; the chamfers take a
+	# bite out of each end, following the side's own slope so the taper of a
+	# cone stays straight.
+	var side := Vector2(r_top - r_bot, 1.0).normalized()
+	var rings := [
+		[-0.5, r_bot - c],
+		[-0.5 + c * absf(side.y), r_bot + side.x * c],
+		[0.5 - c * absf(side.y), r_top - side.x * c],
+		[0.5, r_top - c],
+	]
+	for ri in range(rings.size() - 1):
+		var y0: float = rings[ri][0]
+		var q0: float = rings[ri][1]
+		var y1: float = rings[ri + 1][0]
+		var q1: float = rings[ri + 1][1]
+		# Outward normal of this band, perpendicular to its own slope.
+		var t2 := Vector2(q1 - q0, y1 - y0)
+		var nr := Vector2(t2.y, -t2.x).normalized()
+		for i in range(ROUND_SEG):
+			var a0 := TAU * float(i) / float(ROUND_SEG)
+			var a1 := TAU * float(i + 1) / float(ROUND_SEG)
+			var p00 := Vector3(sin(a0) * q0, y0, cos(a0) * q0)
+			var p10 := Vector3(sin(a1) * q0, y0, cos(a1) * q0)
+			var p11 := Vector3(sin(a1) * q1, y1, cos(a1) * q1)
+			var p01 := Vector3(sin(a0) * q1, y1, cos(a0) * q1)
+			var n0 := Vector3(sin(a0) * nr.x, nr.y, cos(a0) * nr.x).normalized()
+			var n1 := Vector3(sin(a1) * nr.x, nr.y, cos(a1) * nr.x).normalized()
+			_emit_tri(st, p00, p10, p11, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, n0, n1, n1)
+			_emit_tri(st, p00, p11, p01, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, n0, n1, n0)
+	for top in [false, true]:
+		var y: float = 0.5 if top else -0.5
+		var r: float = (r_top - c) if top else (r_bot - c)
+		var nn := Vector3(0, 1.0 if top else -1.0, 0)
+		for i in range(ROUND_SEG):
+			var a0 := TAU * float(i) / float(ROUND_SEG)
+			var a1 := TAU * float(i + 1) / float(ROUND_SEG)
+			_emit_tri(st, Vector3(0, y, 0),
+				Vector3(sin(a0) * r, y, cos(a0) * r),
+				Vector3(sin(a1) * r, y, cos(a1) * r),
+				Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
+	# No generate_tangents() here either, for the same reason.
+	return st.commit()
+# [BS:BUILD:PARTS:END]
+
 
 # ============================================================================
 # [BS:RENDER:PLASTIC]
@@ -277,32 +648,34 @@ static func stud_mesh() -> CylinderMesh:
 # - One MultiMesh per brick, not one mesh per stud: an 8-stud brick
 #   costs 2 draw calls, not 9.
 # ============================================================================
-static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: bool = true) -> Node3D:
+static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: bool = true,
+		kind: int = PART_BRICK) -> Node3D:
 	var root := Node3D.new()
 	var size := Vector3(sw * STUD, h, sd * STUD)
 
-	# The shared chamfered cube, scaled - not a BoxMesh. The minifig and the
+	# The shared chamfered part, scaled - not a BoxMesh. The minifig and the
 	# loose debris are built from these, and they have to be moulded plastic
 	# for the same reason every other brick does.
 	var mi := MeshInstance3D.new()
-	mi.mesh = brick_mesh()
+	mi.mesh = part_mesh(kind)
 	mi.scale = size
 	mi.material_override = mat(color)
 	root.add_child(mi)
 
-	if with_studs:
+	var slots := part_stud_slots(kind, sw, sd)
+	if with_studs and not slots.is_empty():
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = stud_mesh()
-		mm.instance_count = sw * sd
+		mm.instance_count = slots.size()
 		var i := 0
-		for x in sw:
-			for z in sd:
-				var px: float = (float(x) + 0.5) * STUD - size.x * 0.5
-				var pz: float = (float(z) + 0.5) * STUD - size.z * 0.5
-				var t := Transform3D(Basis(), Vector3(px, h * 0.5 + STUD_H * 0.5, pz))
-				mm.set_instance_transform(i, t)
-				i += 1
+		for u in slots:
+			# Slots come back in unit-part space, so the same table serves a
+			# 1x1 and a 6x2 of the same kind.
+			var t := Transform3D(Basis(), Vector3(u.x * size.x,
+				h * 0.5 + STUD_H * 0.5, u.z * size.z))
+			mm.set_instance_transform(i, t)
+			i += 1
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = stud_mat(color)
@@ -325,7 +698,8 @@ static func brick_visual(sw: int, sd: int, h: float, color: Color, with_studs: b
 #   widen this mask to 'make debris feel weightier'.
 # - A brick becomes a body only when torn. See BS:DESTRUCTION:TEAR.
 # ============================================================================
-static func brick_body(sw: int, sd: int, h: float, color: Color) -> RigidBody3D:
+static func brick_body(sw: int, sd: int, h: float, color: Color,
+		kind: int = PART_BRICK) -> RigidBody3D:
 	var body := RigidBody3D.new()
 	body.mass = maxf(0.4, sw * sd * 0.22)
 	body.linear_damp = 0.55
@@ -343,7 +717,10 @@ static func brick_body(sw: int, sd: int, h: float, color: Color) -> RigidBody3D:
 	shape.size = Vector3(sw * STUD, h, sd * STUD)
 	cs.shape = shape
 	body.add_child(cs)
-	body.add_child(brick_visual(sw, sd, h, color))
+	# The collider stays a box whatever the part is. A slope tumbling as a box
+	# is invisible in a debris cloud, and a convex hull per part kind would put
+	# real physics cost on the one thing the funnel spawns hundreds of.
+	body.add_child(brick_visual(sw, sd, h, color, true, kind))
 	return body
 
 
@@ -616,14 +993,18 @@ static func _head_quad(st: SurfaceTool, a: Vector3, b: Vector3, cc: Vector3, d: 
 static func _emit_tri(st: SurfaceTool, p0: Vector3, p1: Vector3, p2: Vector3,
 		t0: Vector2, t1: Vector2, t2: Vector2,
 		n0: Vector3, n1: Vector3, n2: Vector3) -> void:
+	# Smooth-shaded parts carry a normal per vertex, so the face normal used to
+	# decide the winding is their average. Same rule as the brick, same helper -
+	# this used to be its own copy of the test, with its own sign, and that is
+	# how the convention managed to be wrong in three places at once.
 	var face_n := (n0 + n1 + n2).normalized()
-	var order := [[p0, t0, n0], [p1, t1, n1], [p2, t2, n2]]
-	if (p1 - p0).cross(p2 - p0).dot(face_n) < 0.0:
-		order = [[p0, t0, n0], [p2, t2, n2], [p1, t1, n1]]
-	for e in order:
-		st.set_normal(e[2])
-		st.set_uv(e[1])
-		st.add_vertex(e[0])
+	var pos := [p0, p1, p2]
+	var uv := [t0, t1, t2]
+	var nrm := [n0, n1, n2]
+	for i in wind_cw(p0, p1, p2, face_n):
+		st.set_normal(nrm[i])
+		st.set_uv(uv[i])
+		st.add_vertex(pos[i])
 
 
 # The texture wraps the whole head, so its aspect has to match the head's:

@@ -144,6 +144,8 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:RENDER:TORSO]` — `shaders/torso.gdshader` — printing the front face, selected by the local normal
 - `[BS:BUILD:FACE]` — `scripts/brick_lib.gd` — the face is printed, not modelled, and why brows carry it
 - `[BS:BUILD:CHAMFER]` — `scripts/brick_lib.gd` — the chamfered brick, and why a bare BoxMesh read as generic blocks
+- `[BS:BUILD:PARTS]` — `scripts/brick_lib.gd` — the part library beyond the box: slopes, tiles, arches, round bricks and cones
+- `[BS:BUILD:WINDING]` — `scripts/brick_lib.gd` — the one place that decides which way round a triangle goes, and why it was backwards
 - `[BS:RENDER:WIND]` — `shaders/brick_common.gdshaderinc` — the vertex wind, and why its storm must be the same storm the physics uses
 - `[BS:RENDER:PLASTIC]` — `scripts/brick_lib.gd` — the one definition of what plastic looks like, and why the fresnel term is bricks-only
 - `[BS:WORLD:ENVIRONMENT]` — `scripts/main.gd` — sky, light, fog

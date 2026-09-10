@@ -1683,6 +1683,24 @@ func _grab(name: String) -> void:
 # - It steps physics frames, not process frames: headless process
 #   frames run uncapped and simulate almost no time.
 # ============================================================================
+
+# Lets the self-test name a prop. GDScript has no way to call a static
+# function by name, and a match here is better than a second registry that
+# can quietly fall out of step with PropBuilder.
+func _prop_by_name(n: String) -> Structure:
+	match n:
+		"barn": return PropBuilder.barn(Vector3.ZERO)
+		"farmhouse": return PropBuilder.farmhouse(Vector3.ZERO)
+		"silo": return PropBuilder.silo(Vector3.ZERO)
+		"water_tower": return PropBuilder.water_tower(Vector3.ZERO)
+		"tree": return PropBuilder.tree(Vector3.ZERO, 1.0)
+		"fence": return PropBuilder.fence_run(Vector3(-4, 0, 0), Vector3(4, 0, 0))
+		"pickup": return PropBuilder.pickup(Vector3.ZERO, BrickLib.C_BLUE, 0.0)
+		"drive_in": return PropBuilder.drive_in_screen(Vector3.ZERO, 0.0)
+		"windmill": return PropBuilder.windmill(Vector3.ZERO)
+		"outhouse": return PropBuilder.outhouse(Vector3.ZERO)
+	return null
+
 func _run_selftest() -> void:
 	await get_tree().process_frame
 	var fails: Array[String] = []
@@ -1853,39 +1871,219 @@ func _run_selftest() -> void:
 	if not missing.is_empty():
 		fails.append("audio assets missing or empty: %s" % ", ".join(missing))
 
-	# --- 4b. the brick mesh is a closed, correctly-wound solid ------------
-	# A backwards face means you see straight through the brick and out its
-	# far side. Hand-tracking the winding of 44 triangles got 16 of them wrong
-	# and it shipped into a screenshot before anyone noticed, so it is checked.
-	var bm2 := BrickLib.brick_mesh()
-	var arrs: Array = bm2.surface_get_arrays(0)
-	var bverts: PackedVector3Array = arrs[Mesh.ARRAY_VERTEX]
-	var bnorms: PackedVector3Array = arrs[Mesh.ARRAY_NORMAL]
-	var wrong := 0
-	var edge_use: Dictionary = {}
-	for ti in range(bverts.size() / 3):
-		var va := bverts[ti * 3]
-		var vb := bverts[ti * 3 + 1]
-		var vc := bverts[ti * 3 + 2]
-		var geo := (vb - va).cross(vc - va)
-		if geo.length() < 1e-9 or geo.normalized().dot(bnorms[ti * 3]) < 0.0:
-			wrong += 1
-		for ei in range(3):
-			var e0 := bverts[ti * 3 + ei]
-			var e1 := bverts[ti * 3 + (ei + 1) % 3]
-			var key := "%.4f,%.4f,%.4f|%.4f,%.4f,%.4f" % [
-				minf(e0.x, e1.x), minf(e0.y, e1.y), minf(e0.z, e1.z),
-				maxf(e0.x, e1.x), maxf(e0.y, e1.y), maxf(e0.z, e1.z)]
-			edge_use[key] = int(edge_use.get(key, 0)) + 1
-	if wrong != 0:
-		fails.append("%d brick triangles face inwards - you can see through bricks" % wrong)
-	for k in edge_use:
-		if int(edge_use[k]) != 2:
-			fails.append("the brick mesh is not a closed solid")
-			break
-	if bverts.size() / 3 < 30:
-		fails.append("the brick has only %d triangles - it is not chamfered"
-			% (bverts.size() / 3))
+	# --- 4b. every part is a closed, correctly-wound, unit-sized solid ----
+	# A backwards face means you see straight through the part and out its far
+	# side. This has gone wrong twice by hand-tracking - 16 of the brick's 44
+	# triangles, then the whole head from one sign flip - and a third time in a
+	# way nothing here caught: the convention ITSELF was backwards. Godot's
+	# front face is CLOCKWISE seen from the front, so the geometric cross
+	# product must point AGAINST the outward normal. This test used to assert
+	# the opposite, which is why it passed for weeks while the camera was
+	# looking at the far surface of every brick in the game. The convention is
+	# proven against the renderer, not asserted, by tools/winding_probe.gd.
+	# Checked for EVERY part, because the library is now eight of them.
+	for pk in range(BrickLib.PART_COUNT):
+		var pm := BrickLib.part_mesh(pk)
+		var pname := BrickLib.part_name(pk)
+		if pm == null:
+			fails.append("part '%s' has no mesh" % pname)
+			continue
+		var arrs: Array = pm.surface_get_arrays(0)
+		var bverts: PackedVector3Array = arrs[Mesh.ARRAY_VERTEX]
+		var bnorms: PackedVector3Array = arrs[Mesh.ARRAY_NORMAL]
+		var wrong := 0
+		var edge_use: Dictionary = {}
+		var lo := Vector3(1e9, 1e9, 1e9)
+		var hi := Vector3(-1e9, -1e9, -1e9)
+		for ti in range(bverts.size() / 3):
+			var va := bverts[ti * 3]
+			var vb := bverts[ti * 3 + 1]
+			var vc := bverts[ti * 3 + 2]
+			var geo := (vb - va).cross(vc - va)
+			# Averaged, because a smooth part carries a different normal at
+			# each corner and any single one of them can lean past the face.
+			var fn := (bnorms[ti * 3] + bnorms[ti * 3 + 1] + bnorms[ti * 3 + 2]).normalized()
+			if geo.length() < 1e-9 or geo.normalized().dot(fn) > 0.0:
+				wrong += 1
+			for ei in range(3):
+				var e0 := bverts[ti * 3 + ei]
+				var e1 := bverts[ti * 3 + (ei + 1) % 3]
+				# Snap and add zero before formatting. cos() at a right angle
+				# returns -1.8e-16, which prints as "-0.0000" while the same
+				# corner reached from another triangle prints "0.0000" - two
+				# keys for one edge, and every round part reported as an open
+				# shell. That was the TEST being wrong about closed meshes, and
+				# it is exactly the class of instrument error this project has
+				# already been caught by three times. Adding 0.0 collapses
+				# negative zero onto zero.
+				var key := "%.4f,%.4f,%.4f|%.4f,%.4f,%.4f" % [
+					snappedf(minf(e0.x, e1.x), 0.0001) + 0.0,
+					snappedf(minf(e0.y, e1.y), 0.0001) + 0.0,
+					snappedf(minf(e0.z, e1.z), 0.0001) + 0.0,
+					snappedf(maxf(e0.x, e1.x), 0.0001) + 0.0,
+					snappedf(maxf(e0.y, e1.y), 0.0001) + 0.0,
+					snappedf(maxf(e0.z, e1.z), 0.0001) + 0.0]
+				edge_use[key] = int(edge_use.get(key, 0)) + 1
+			for v in [va, vb, vc]:
+				lo = Vector3(minf(lo.x, v.x), minf(lo.y, v.y), minf(lo.z, v.z))
+				hi = Vector3(maxf(hi.x, v.x), maxf(hi.y, v.y), maxf(hi.z, v.z))
+		if wrong != 0:
+			fails.append("%d '%s' triangles face inwards - you see through the part"
+				% [wrong, pname])
+		for k in edge_use:
+			if int(edge_use[k]) != 2:
+				fails.append("the '%s' mesh is not a closed solid" % pname)
+				break
+		# Every part is scaled per instance from the unit cube. One that
+		# overflows it reaches into the brick next door on every placement.
+		if lo.x < -0.501 or lo.y < -0.501 or lo.z < -0.501 \
+				or hi.x > 0.501 or hi.y > 0.501 or hi.z > 0.501:
+			fails.append("the '%s' mesh spills outside the unit cube" % pname)
+		if bverts.size() / 3 < 30:
+			fails.append("'%s' has only %d triangles - it is not chamfered"
+				% [pname, bverts.size() / 3])
+
+	# --- 4b2. parts, studs and the batcher agree --------------------------
+	# The stud table and the batcher are two halves of one thing: Structure
+	# allocates the stud MultiMesh from part_stud_slots and then places into it
+	# from part_stud_slots, so if those ever disagree the studs of one part
+	# overwrite another's and the last few land at the origin.
+	for pk in range(BrickLib.PART_COUNT):
+		for sz in [[1, 1], [2, 2], [6, 2], [4, 1]]:
+			var slots: Array = BrickLib.part_stud_slots(pk, sz[0], sz[1])
+			var want: int = sz[0] * sz[1]
+			match pk:
+				BrickLib.PART_TILE, BrickLib.PART_CHEESE:
+					want = 0                      # smooth parts, by definition
+				BrickLib.PART_ROUND, BrickLib.PART_CONE:
+					want = 1                      # one stud in the middle
+				BrickLib.PART_SLOPE:
+					want = sz[0]                  # one row, on the ledge
+			if slots.size() != want:
+				fails.append("'%s' %dx%d offers %d stud slots, expected %d"
+					% [BrickLib.part_name(pk), sz[0], sz[1], slots.size(), want])
+			for u in slots:
+				if absf(u.x) > 0.5 or absf(u.z) > 0.5 or absf(u.y - 0.5) > 1e-5:
+					fails.append("'%s' puts a stud slot off the top face at %s"
+						% [BrickLib.part_name(pk), str(u)])
+
+	# One MultiMesh per kind, and every stud the parts ask for actually placed.
+	var probe := Structure.new()
+	var expect_studs := 0
+	for pk in range(BrickLib.PART_COUNT):
+		probe.add_part(pk, 2, 2, BrickLib.BRICK_H, BrickLib.C_RED,
+			Vector3(float(pk) * 1.2, 0.3, 0.0))
+		expect_studs += BrickLib.part_stud_slots(pk, 2, 2).size()
+	probe.finish()
+	var kinds_batched := 0
+	var studs_placed := -1
+	for ch in probe.get_children():
+		if ch is MultiMeshInstance3D:
+			var mm: MultiMesh = (ch as MultiMeshInstance3D).multimesh
+			if mm.mesh == BrickLib.stud_mesh():
+				studs_placed = mm.instance_count
+			else:
+				kinds_batched += 1
+				if mm.instance_count != 1:
+					fails.append("a part kind batched %d instances, expected 1"
+						% mm.instance_count)
+	if kinds_batched != BrickLib.PART_COUNT:
+		fails.append("Structure batched %d part kinds of %d - a kind is being dropped"
+			% [kinds_batched, BrickLib.PART_COUNT])
+	if studs_placed != expect_studs:
+		fails.append("Structure placed %d studs but the parts ask for %d"
+			% [studs_placed, expect_studs])
+	probe.free()
+
+	# Tearing part 3 must blank PART 3. With mixed kinds the entry index and
+	# the instance slot inside that kind's MultiMesh are different numbers, and
+	# confusing them tears the wrong brick - which is invisible in play,
+	# because something does vanish and it is roughly where you hit.
+	#
+	# This checks the BOOKKEEPING, not the rendered result, and that is
+	# deliberate. The first version of this test called _hide_instance and read
+	# the instance transform back off the MultiMesh - and every instance came
+	# back as identity, including ones that had just been written with a scale.
+	# --selftest runs headless, where the dummy renderer does not keep the
+	# per-instance buffer, so a read-back test here can only ever pass. The
+	# rendered version of this test lives in tools/part_probe.gd, which runs
+	# with a real renderer. What is checkable here is the invariant that
+	# _hide_instance and tear() actually index with: within each kind the slots
+	# must be exactly 0..n-1, no repeats, none out of range. A repeated slot is
+	# precisely what blanks the wrong brick.
+	var mixed := Structure.new()
+	for i in range(6):
+		mixed.add_part(BrickLib.PART_BRICK if i % 2 == 0 else BrickLib.PART_SLOPE,
+			2, 2, BrickLib.BRICK_H, BrickLib.C_BLUE, Vector3(float(i) * 1.2, 0.3, 0.0))
+	mixed.finish()
+	var per_kind: Dictionary = {}
+	for me in mixed.entries:
+		var mk: int = me["kind"]
+		if not per_kind.has(mk):
+			per_kind[mk] = []
+		per_kind[mk].append(int(me["slot"]))
+	for mk in per_kind:
+		var got: Array = per_kind[mk]
+		got.sort()
+		var want_slots: Array = []
+		for j in range(got.size()):
+			want_slots.append(j)
+		if got != want_slots:
+			fails.append("'%s' batch slots are %s, expected %s - tearing one part"
+				% [BrickLib.part_name(mk), str(got), str(want_slots)]
+				+ " would blank another")
+		var mmi: MultiMeshInstance3D = mixed._part_mmi.get(mk, null)
+		if mmi == null:
+			fails.append("'%s' was added but never batched" % BrickLib.part_name(mk))
+		elif mmi.multimesh.instance_count != got.size():
+			fails.append("'%s' batched %d instances for %d parts"
+				% [BrickLib.part_name(mk), mmi.multimesh.instance_count, got.size()])
+	mixed.free()
+
+	# --- 4b3. the props are built from real parts -------------------------
+	# The note on the last build was "just a game with mega blocks in it", and
+	# the cause was that every prop in the town was assembled from one shape.
+	# This asserts the parts that answer it are actually in use: a roof made of
+	# slopes, round things made round, smooth surfaces tiled. It cannot judge
+	# whether a prop looks good - that is what Docs/shots is for - but it can
+	# tell you the day a roof goes back to being a box on a hand-picked angle.
+	var expect_kinds := {
+		"barn": [BrickLib.PART_SLOPE, BrickLib.PART_TILE, BrickLib.PART_ARCH],
+		"farmhouse": [BrickLib.PART_SLOPE, BrickLib.PART_SLOPE_INV,
+			BrickLib.PART_TILE, BrickLib.PART_ROUND, BrickLib.PART_CHEESE],
+		"silo": [BrickLib.PART_ROUND, BrickLib.PART_CONE],
+		"water_tower": [BrickLib.PART_ROUND, BrickLib.PART_CONE, BrickLib.PART_TILE],
+		"tree": [BrickLib.PART_ROUND, BrickLib.PART_CONE],
+		"fence": [BrickLib.PART_CHEESE, BrickLib.PART_TILE],
+		"pickup": [BrickLib.PART_SLOPE, BrickLib.PART_TILE, BrickLib.PART_ROUND],
+		"drive_in": [BrickLib.PART_TILE],
+		"windmill": [BrickLib.PART_ROUND, BrickLib.PART_CONE, BrickLib.PART_TILE],
+		"outhouse": [BrickLib.PART_SLOPE],
+	}
+	for prop_name in expect_kinds:
+		var ps := _prop_by_name(prop_name)
+		if ps == null:
+			fails.append("selftest asks about a prop '%s' that does not exist" % prop_name)
+			continue
+		var used: Dictionary = {}
+		for e in ps.entries:
+			used[e["kind"]] = true
+		for want_kind in expect_kinds[prop_name]:
+			if not used.has(want_kind):
+				fails.append("prop '%s' uses no %s - it has gone back to boxes"
+					% [prop_name, BrickLib.part_name(want_kind)])
+		# Part variety costs a draw call per kind per prop. Five is generous;
+		# more than that and a corridor of these props starts costing what the
+		# batching was introduced to save. See BS:DESTRUCTION:STRUCTURE.
+		# Part variety costs a draw call per kind per prop. Six is the ceiling,
+		# and it is meant to be uncomfortable: the farmhouse is at it, and it
+		# is a hero building that appears twice in a corridor. Anything the
+		# scatter places by the dozen - trees, furniture - should be nearer
+		# three. See BS:DESTRUCTION:STRUCTURE.
+		if used.size() > 6:
+			fails.append("prop '%s' uses %d part kinds - that is %d draw calls per"
+				% [prop_name, used.size(), used.size() + 1] + " instance")
+		ps.free()
 
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game

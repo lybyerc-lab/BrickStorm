@@ -698,3 +698,168 @@ right immediately.
   colour. They should be the jacket colour, or the jacket lightened.
 - The hair still bands across the forehead.
 - Buildings remain rectangular boxes.
+
+---
+
+## 2026-09-10 — The meshes were inside-out, and the buildings are made of parts
+
+Two things, and the first one had to be settled before the second could be
+built on top of it.
+
+### The winding question from the torso work is answered: they were inside-out
+
+The previous entry recorded, as unresolved, that the surface the camera
+actually shades on the torso reports `v_local.z = -0.25` — the far face. That
+is now proven, and it was true of **every generated mesh in the game**: the
+brick, the head, the torso.
+
+**Godot's front face is CLOCKWISE seen from the front.** `BrickLib._tri`,
+`_emit_tri` and `_torso_band` each carried their own copy of the same three
+lines, and all three ordered vertices *counter*-clockwise from the outward
+normal. Back-face culling therefore threw away the surface nearest the camera
+and drew the one behind it.
+
+The evidence is `tools/winding_probe.gd`, and it is two measurements, not an
+argument:
+
+1. Two quads, both facing the camera, one wound by `BrickLib.wind_cw` and one
+   deliberately reversed. Exactly one survives culling. Before the fix the
+   reversed one was the survivor; after it, ours is.
+2. A marker sphere at the dead centre of a real brick. Before: 5,551 pixels of
+   marker visible **through** the brick — a hole punched clean through a solid
+   part, and the brick's own pixel count rose by exactly that number once the
+   hole closed. After: zero.
+
+It never looked obviously broken because a closed convex part still fills its
+own silhouette. What was wrong was subtler and everywhere: the depth, the
+silhouette and the lighting were all coming off the wrong surface.
+
+Both printed parts had "empirical" offsets in their shaders that were really
+compensating for this, and both are now undone:
+
+- `face.gdshader` gets its half-turn offset **back**. Dropping it had put the
+  face in the right place for entirely the wrong reason — the fragment in front
+  of you was the far surface, already half a turn round.
+- `torso.gdshader`'s front test is **signed** again. Selecting `+Z` alone had
+  left the torso blank because the shaded surface was the back of the part.
+
+The convention now lives in exactly one place, `BS:BUILD:WINDING`. It was wrong
+in three copies at once; one place cannot drift from itself.
+
+**The self-test was asserting the wrong thing.** The mesh-integrity gate tested
+`geo · normal < 0` — the inverted condition — so it passed cleanly for weeks
+while every brick in the game drew its far side. A gate can be green and wrong.
+It now checks all eight parts, in the right direction, and also that each is a
+closed solid within the unit cube.
+
+### The part library: the buildings are no longer boxes
+
+The note on the last build was *"it feels like ROBLOX mini… just a game with
+mega blocks in it"*, and the honest reading was that every prop in the town was
+assembled from one shape. `BS:BUILD:PARTS` adds seven more: slope, inverted
+slope, cheese slope, tile, round brick, cone, arch.
+
+All eight — the brick included — come out of one generic chamfered-extrusion
+builder. The brick's hand-written "six inset faces, twelve edge chamfers, eight
+corner triangles" is deleted; it was measured against the generic builder
+first, and they agree exactly: **44 triangles, 5.750 surface area, 0.9929
+volume, identical bounds**. `tools/part_probe.gd` still asserts those numbers,
+so a change to the shared chamfer rules that reshapes every brick in the game
+cannot land quietly.
+
+Two geometry bugs the probe caught that a screenshot would not have:
+
+- **Oblique corners broke the end caps.** Offsetting each edge's own endpoints
+  inward only lands in the right place at a right angle. On every slope the cap
+  outline crossed itself, the triangulator rejected it outright, and the
+  fallback fan filled a shape that was not the part. Caps are now built from
+  proper miter points, which also collapses the corner patch back to the single
+  triangle the brick always had.
+- **`generate_tangents()` on parts with no UVs** — the same trap that hid the
+  torso print for two rounds of debugging. Not called.
+
+`SLOPE_LEDGE` is a half, not a third, because a real 45° slope brick is **two
+studs deep**: one stud of slope, one of studded flat behind it. That flat stud
+is what the next course sits on, and it is why a LEGO roof has no exposed studs
+on its face. At a third, the courses stepped in one stud and left every ledge
+showing — which is a roof faked from slabs, just with more steps.
+
+Roofs go through `_stepped_roof`, which lays real slope courses. The barn gets
+a gambrel (three steep courses, then four shallow); the farmhouse a 45° gable
+with inverted-slope eaves. Both are sized to the **outside** of the walls, not
+to `hw`: `_wall` straddles the corner it is given, so the walls stand a stud
+proud, and a roof sized to `hw` left a band of bare studded wall-top showing
+all the way round. Evidence: `Docs/shots/14-slope-roofs.png`, orthographic,
+because whether a roof face is a continuous pitch or a staircase is a
+silhouette question that a three-quarter view hides either way.
+
+Round things are round parts now — trunks, silo drums, tank, tower legs,
+wheels, barrels, tyres, hay bales. The silo was ten little boxes per course in
+a staggered ring, every one with two corners outside the circle; it read as a
+castellated tower. Smooth things are tiles: the drive-in screen (a cinema
+screen with a grid of studs across it was the loudest wrong note in the set),
+bench seats, fence rails, road signs.
+
+**Part variety is not free.** `Structure` now allocates one MultiMesh per part
+kind a prop actually uses, so a prop's palette is a draw-call budget. The
+self-test caps it at six per prop and the farmhouse sits exactly on the cap —
+deliberately uncomfortable, because it is a hero building that appears twice in
+a corridor, while anything the scatter places by the dozen should be nearer
+three.
+
+Round parts also cost destructibility: the silo went from 72 pieces to 4 before
+the courses were made plate-thick. It doubles as the set piece's heavy gate, and
+at four thick rings the gate came apart in three grabs. Barrels and bins got
+the same treatment for the same reason — a smashable exists to come apart.
+
+### A third instrument error, caught this time
+
+The first version of the tear-mapping gate called `_hide_instance` and read the
+instance transform back off the MultiMesh. It passed. It also read **identity
+for every instance**, including ones just written with a scale: `--selftest`
+runs headless, where the dummy renderer keeps no per-instance buffer, so that
+test could only ever pass.
+
+Split in two, and both halves confirmed:
+
+- `--selftest` checks the bookkeeping `_hide_instance` and `tear()` index with —
+  within each kind, slots must be exactly `0..n-1`. A repeated slot is what
+  blanks the wrong brick.
+- `tools/part_probe.gd` does the rendered version, where the buffer reads back
+  `(1.0, 0.6, 1.0)` as written and hiding part 3 blanks exactly part 3. It
+  fails itself if the buffer reads empty, rather than reporting a pass.
+
+That is three measurement-instrument errors in this project so far, and the
+pattern in all three is the same: **the instrument reported no change when the
+thing it measured was broken.** Validate the instrument before trusting the
+number.
+
+### Gates, each proven to fail
+
+Every gate below was checked by deliberately breaking the rule it guards:
+
+- reversed `wind_cw` → all eight parts reported inward-facing
+- a cone pushed past the unit cube → "spills outside the unit cube"
+- a cap fan removed → "not a closed solid" on both round parts
+- studs given to tiles → "'tile' 2x2 offers 4 stud slots, expected 0"
+- batch slots collided → "tearing one part would blank another"
+- the barn roof reverted to a tilted slab → "prop 'barn' uses no slope"
+
+One correction to the *test* was needed on the way: the closed-solid edge key
+formatted coordinates directly, and `cos()` at a right angle returns
+-1.8e-16, which prints as `-0.0000` while the same corner reached from another
+triangle prints `0.0000`. Two keys for one edge, and every round part reported
+as an open shell. That was the test being wrong, not the mesh.
+
+### Not done
+
+- The jacket still reads much darker than the arms, which use the flat shirt
+  colour. Unchanged from the last entry.
+- The hair still bands across the forehead, and is still a plain box.
+- **The open question for the director stands, and it is not mine to settle.**
+  In the demo the environment is largely *not* brick-built — cliffs, buildings
+  and terrain are sculpted textured meshes, and LEGO plastic is reserved for
+  characters, vehicles and destructibles. This work took the other road,
+  because North Star pillar 1 says everything in the world is built from real
+  brick shapes and that pillar changes only by director decision. Worth
+  deciding explicitly rather than by default.

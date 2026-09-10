@@ -28,12 +28,15 @@ void vertex() {
 void fragment() {
 	// The head mesh is a unit-radius barrel of unit height, so the local
 	// position gives the wrap directly.
-	// No half-turn offset. Determined empirically with a banded test texture:
-	// atan returns +/-pi at this mesh's front, so adding 0.5 put the seam -
-	// and therefore the join in the middle of the face - dead ahead. The band
-	// test is the only thing that settles this; per-vertex UV dumps looked
-	// correct throughout, because the error was in the wrap, not the values.
-	float u = fract(atan(v_local.x, v_local.z) / 6.28318530718);
+	// The half-turn offset is BACK, and the reason it ever looked wrong is now
+	// understood: the mesh was wound inside-out, so the fragment in front of
+	// you was the far surface at z < 0, and atan already read half a turn
+	// round. Dropping the offset cancelled that and the face landed correctly
+	// for entirely the wrong reason. With the winding fixed (BS:BUILD:WINDING)
+	// the near surface is the one shaded, and this offset is what puts +Z -
+	// dead ahead - at u = 0.5, which is where face_texture draws the face and
+	// where the mesh's own authored UVs put it too.
+	float u = fract(atan(v_local.x, v_local.z) / 6.28318530718 + 0.5);
 	float v = 0.5 - v_local.y;
 	ALBEDO = texture(face_tex, vec2(u, clamp(v, 0.0, 1.0))).rgb;
 	ROUGHNESS = p_roughness;

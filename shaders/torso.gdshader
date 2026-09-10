@@ -9,6 +9,8 @@
 // - The sides and back are plain plastic, exactly like the real part. Only the
 //   flat front carries artwork, and it fades out across the corner chamfer so
 //   the print does not smear round the edge.
+// - This depends on BS:BUILD:WINDING being right. While the mesh was wound
+//   inside-out the "front" the camera saw was the back of the part.
 shader_type spatial;
 
 uniform sampler2D print_tex : source_color, filter_linear_mipmap;
@@ -27,21 +29,11 @@ void vertex() {
 
 void fragment() {
 	// The torso mesh is a unit-height part, full width 1.0 at the waist.
-	// Printed on WHICHEVER flat +/-Z face is being looked at, with u mirrored
-	// on the far side so the asymmetric strap reads correctly either way.
-	//
-	// Selecting only +Z left the torso blank: the surface the camera actually
-	// sees on this mesh reports v_local.z = -0.25, measured, not assumed. That
-	// strongly suggests these generated meshes are wound inside-out and that
-	// the head's face offset has been silently compensating for the same
-	// thing. Recorded as unresolved in Docs/DECISION_LOG.md - this makes the
-	// print correct without pretending the winding question is answered.
 	// The artwork spans the FLAT face, not the whole part. The front runs to
 	// +/-0.40 in x once the corner radius is taken off, so mapping u straight
 	// from x left the outer tenth of the print permanently off-screen and the
 	// whole thing looking inset.
-	float side = sign(v_local.z);
-	float u = clamp(0.5 + side * v_local.x / 0.80, 0.0, 1.0);
+	float u = clamp(0.5 + v_local.x / 0.80, 0.0, 1.0);
 	float v = clamp(0.5 - v_local.y, 0.0, 1.0);
 	vec3 print = texture(print_tex, vec2(u, v)).rgb;
 
@@ -50,8 +42,13 @@ void fragment() {
 	// under the compatibility renderer, so the test read zero everywhere and
 	// the torso came out unprinted. v_local demonstrably works: u and v
 	// derived from it were exact while front was flat zero.
-	// The part is half a unit deep, so the flat front sits at z = +0.25.
-	float front = smoothstep(0.58, 0.86, abs(v_local.z) / 0.25);
+	// The part is half a unit deep, so the flat front sits at z = +0.25. This
+	// test is SIGNED. It used to take abs(z) and mirror u on the far side,
+	// because selecting +Z alone left the torso blank - the mesh was wound
+	// inside-out and the surface being shaded was the back at z = -0.25. With
+	// BS:BUILD:WINDING fixed the front is genuinely the front, so the back is
+	// plain plastic again, like the real part.
+	float front = smoothstep(0.58, 0.86, v_local.z / 0.25);
 	ALBEDO = mix(base_color, print, front);
 	ROUGHNESS = p_roughness;
 	SPECULAR = p_specular;

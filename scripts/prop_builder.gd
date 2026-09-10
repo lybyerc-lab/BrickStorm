@@ -11,11 +11,23 @@ const H := 0.6      # brick height    (BrickLib.BRICK_H)
 # [BS:BUILD:TOWN]
 # Purpose: The farm town prop set - every structure the funnel can take apart.
 # Invariants:
-# - Every prop is assembled from bricks at stud pitch (pillar 1).
+# - Every prop is assembled from real parts at stud pitch (pillar 1).
 # - Courses are staggered like real brickwork; it is most of what
 #   makes a wall read as built rather than extruded.
 # - Props must survive being torn brick-by-brick, so no prop may rely
 #   on a single mesh for its silhouette.
+# - A ROOF IS MADE OF SLOPE BRICKS, NOT OF TILTED SLABS. Every roof in this
+#   file used to be a box rotated by a hand-picked angle, which is the single
+#   loudest tell that a model was not built from parts - "a game with mega
+#   blocks in it" was the note, and the roofs were most of it. Roofs go
+#   through _stepped_roof, which lays real slope courses stepping in one stud
+#   and up one course at a time, exactly as the part is used in a real model.
+# - ROUND THINGS ARE ROUND PARTS. Trunks, silo caps, wheels, barrels, tyres
+#   and tower legs are cylinders and cones, not rings of little boxes.
+# - SMOOTH SURFACES ARE TILES. A drive-in screen, a bench seat or a road sign
+#   with studs on it reads as unfinished; that is what tiles are for.
+# - Part variety costs a draw call per kind per prop (see BS:DESTRUCTION:
+#   STRUCTURE), so a prop uses a small deliberate palette, not everything.
 # ============================================================================
 static func _wall(st: Structure, start: Vector3, dir: Vector3, length_studs: int,
 		courses: int, color: Color, brick_len: int = 4, depth: int = 2) -> void:
@@ -43,6 +55,51 @@ static func _wall(st: Structure, start: Vector3, dir: Vector3, length_studs: int
 			first = false
 
 
+# A roof, built the way a roof is built: courses of slope bricks, each one
+# stud further in and one course higher, with the gable ends filled in behind
+# them so the staircase reads as a solid wall rather than a set of floating
+# shelves. `sections` is a list of [courses, rise] so one call can do a barn's
+# gambrel - a steep lower pitch and a shallow upper one - as well as a plain
+# gable. Slopes descend toward +Z by default, so each side is yawed a quarter
+# turn to face outward.
+static func _stepped_roof(st: Structure, half_w: int, length: int, base_y: float,
+		sections: Array, color: Color, z_centre: float = 0.0) -> void:
+	# Each course is TWO studs deep - one stud of slope, one of studded flat -
+	# and steps in by one, so the course above lands squarely on the flat and
+	# hides its studs. That is how the real part stacks, and the two sides meet
+	# exactly at the ridge after half_w - 1 courses.
+	var max_courses := half_w - 1
+	var course := 0
+	var y := base_y
+	for sec in sections:
+		var rise: float = sec[1]
+		for i in range(int(sec[0])):
+			if course >= max_courses:
+				break
+			var outer := half_w - course        # outer edge, in studs
+			for sgn in [-1.0, 1.0]:
+				var x: float = sgn * (float(outer) - 1.0) * S
+				# The slope courses stop one stud short of each end so the
+				# gable filler below can close the triangle without fighting
+				# them for the same space.
+				st.add_part(BrickLib.PART_SLOPE, maxi(1, length - 2), 2, rise, color,
+					Vector3(x, y + rise * 0.5, z_centre),
+					Vector3(0, sgn * PI * 0.5, 0))
+			# Gable ends: one brick per course spanning what is left of the
+			# width, at each end of the run.
+			for zs in [-1.0, 1.0]:
+				st.add_brick(outer * 2, 1, rise, color,
+					Vector3(0, y + rise * 0.5,
+						z_centre + zs * (float(length) - 1.0) * S * 0.5))
+			y += rise
+			course += 1
+	# The ridge cap. A tile, because the top of a roof is smooth. Two studs
+	# ACROSS the roof and the full length ALONG it - it used to be the other
+	# way round, and a 10-metre plate stuck out sideways over the barn.
+	st.add_part(BrickLib.PART_TILE, 2, length, BrickLib.PLATE_H, color,
+		Vector3(0, y + BrickLib.PLATE_H * 0.5, z_centre))
+
+
 static func barn(pos: Vector3) -> Structure:
 	var st := Structure.new()
 	st.position = pos
@@ -65,17 +122,23 @@ static func barn(pos: Vector3) -> Structure:
 	_wall(st, Vector3(-hw, 6.0 * H, -hd), Vector3(1, 0, 0), w, 1, white, 4, 2)
 	_wall(st, Vector3(-hw, 6.0 * H, hd), Vector3(1, 0, 0), w, 1, white, 4, 2)
 
-	# gambrel roof - four slabs
+	# A GAMBREL, in slope bricks: a steep lower pitch and a shallow upper one,
+	# which is the shape that makes a barn a barn. It used to be four slabs
+	# tipped at 1.02 and 0.39 radians - numbers chosen to look right from one
+	# angle, with sharp box edges wherever they met.
 	var wall_top := 6.0 * H + H
-	for sgn in [-1.0, 1.0]:
-		st.add_brick(5, d, 0.22, red, Vector3(sgn * 2.95, wall_top + 0.9, 0),
-			Vector3(0, 0, sgn * -1.02))
-		st.add_brick(6, d, 0.22, red, Vector3(sgn * 1.2, wall_top + 2.3, 0),
-			Vector3(0, 0, sgn * -0.39))
+	# Two steep courses then five shallow: the real gambrel break. The roof is
+	# one stud wider and two studs longer than the wall centre-lines, because
+	# _wall straddles the corner it is given - the walls stand a stud proud of
+	# hw/hd, and a roof sized to hw left a band of bare studded wall-top
+	# showing all the way round.
+	_stepped_roof(st, w / 2 + 1, d + 2, wall_top, [[3, H * 1.4], [4, H * 0.55]], red)
 
-	# big white doors on the -Z face
+	# big white doors on the -Z face, under an arch
 	st.add_brick(4, 1, H * 5.0, white, Vector3(-1.1, H * 2.5, -hd - 0.2))
 	st.add_brick(4, 1, H * 5.0, white, Vector3(1.1, H * 2.5, -hd - 0.2))
+	st.add_part(BrickLib.PART_ARCH, 10, 1, H * 2.0, white,
+		Vector3(0, H * 6.0, -hd - 0.2))
 	st.finish()
 	return st
 
@@ -97,22 +160,46 @@ static func farmhouse(pos: Vector3) -> Structure:
 
 	# windows
 	for zz in [-1.5, 1.5]:
-		st.add_brick(2, 1, H * 2.0, BrickLib.C_TRANS, Vector3(-hw - 0.15, H * 2.6, zz))
-		st.add_brick(2, 1, H * 2.0, BrickLib.C_TRANS, Vector3(hw + 0.15, H * 2.6, zz))
+		for sx in [-1.0, 1.0]:
+			st.add_brick(2, 1, H * 2.0, BrickLib.C_TRANS,
+				Vector3(sx * (hw + 0.15), H * 2.6, zz))
+			# A cheese slope sill under each window. Cheap, and it is the kind
+			# of one-part detail that separates a built model from a box.
+			st.add_part(BrickLib.PART_CHEESE, 2, 1, BrickLib.PLATE_H * 1.4,
+				BrickLib.C_WHITE,
+				Vector3(sx * (hw + 0.22), H * 2.6 - H, zz),
+				Vector3(0, sx * PI * 0.5, 0), false)
 	st.add_brick(2, 1, H * 4.0, BrickLib.C_BROWN, Vector3(0, H * 2.0, -hd - 0.15))
 
-	# gable roof
+	# Eaves first: a course of inverted slopes standing one stud proud of the
+	# wall. This is the part that makes a roof look like it was seated on a
+	# house rather than balanced on it, and it is invisible until it is missing.
 	var top := 5.0 * H
 	for sgn in [-1.0, 1.0]:
-		st.add_brick(8, d + 2, 0.22, roof, Vector3(sgn * 1.55, top + 1.0, 0),
-			Vector3(0, 0, sgn * -0.62))
-	# chimney
-	st.add_brick(2, 2, H * 3.0, BrickLib.C_BROWN, Vector3(1.6, top + 1.9, 2.0))
+		# No studs on the eave: it lives under the roof, and the only thing
+		# exposed studs can do there is show through the join.
+		st.add_part(BrickLib.PART_SLOPE_INV, d + 2, 1, BrickLib.PLATE_H * 1.6, roof,
+			Vector3(sgn * (hw + S * 0.5), top + BrickLib.PLATE_H * 0.8, 0),
+			Vector3(0, sgn * PI * 0.5, 0), false)
+	# gable roof in slope courses
+	# A plain 45-degree gable: one brick of rise per stud of run. Sized to the
+	# outside of the walls, not to hw - see the barn.
+	_stepped_roof(st, w / 2 + 1, d + 2, top + BrickLib.PLATE_H * 1.6, [[6, H]], roof)
 
-	# porch
+	# chimney, tall enough to clear the ridge, capped with a tile
+	st.add_brick(2, 2, H * 6.0, BrickLib.C_BROWN, Vector3(1.6, top + H * 3.0, 2.0))
+	st.add_part(BrickLib.PART_TILE, 2, 2, BrickLib.PLATE_H, BrickLib.C_DGREY,
+		Vector3(1.6, top + H * 6.0 + BrickLib.PLATE_H * 0.5, 2.0))
+
+	# porch: round posts, a tiled deck, and its own little slope roof
 	for xx in [-hw + 0.3, hw - 0.3]:
-		st.add_brick(1, 1, H * 4.0, body, Vector3(xx, H * 2.0, -hd - 1.4))
-	st.add_brick(w, 4, 0.2, body, Vector3(0, H * 4.2, -hd - 0.8))
+		st.add_part(BrickLib.PART_ROUND, 1, 1, H * 4.0, body,
+			Vector3(xx, H * 2.0, -hd - 1.4), Vector3.ZERO, false)
+	st.add_part(BrickLib.PART_TILE, w, 4, 0.2, body, Vector3(0, H * 4.2, -hd - 0.8))
+	for i in range(2):
+		st.add_part(BrickLib.PART_SLOPE, w, 2, H * 0.5, roof,
+			Vector3(0, H * 4.3 + H * 0.5 * float(i) + H * 0.25,
+				-hd - 0.9 + S * float(i)), Vector3(0, PI, 0))
 	st.finish()
 	return st
 
@@ -120,24 +207,27 @@ static func farmhouse(pos: Vector3) -> Structure:
 static func silo(pos: Vector3) -> Structure:
 	var st := Structure.new()
 	st.position = pos
-	var n := 10
-	var r := 1.5
-	var courses := 7
+	# A DRUM OF ROUND BRICKS. This was ten little boxes per course arranged in
+	# a ring, staggered course to course, and every one of them had two corners
+	# sticking out past the circle - so the silo read as a castellated tower of
+	# blocks rather than as a cylinder.
+	# PLATE-THICK COURSES. A silo is ribbed, so a stack of thin rings is both
+	# the right silhouette and enough pieces to be worth tearing down - this
+	# one doubles as the set piece's heavy gate (BS:CONTENT:ABILITY_GATE), and
+	# at four thick rings the gate came apart in three grabs.
+	var courses := 21
+	var ch := BrickLib.PLATE_H
 	for c in range(courses):
-		var y: float = float(c) * H + H * 0.5
-		var stag: float = 0.0
-		if c % 2 == 1:
-			stag = TAU / float(n) * 0.5
-		for i in range(n):
-			var a: float = TAU * float(i) / float(n) + stag
-			var p := Vector3(cos(a) * r, y, sin(a) * r)
-			st.add_brick(2, 1, H, BrickLib.C_LGREY, p, Vector3(0, -a, 0))
-	# dome cap
-	for i in range(n):
-		var a: float = TAU * float(i) / float(n)
-		var p := Vector3(cos(a) * r * 0.72, float(courses) * H + 0.35, sin(a) * r * 0.72)
-		st.add_brick(2, 1, H, BrickLib.C_LGREY, p, Vector3(0.42, -a, 0))
-	st.add_brick(2, 2, 0.25, BrickLib.C_DGREY, Vector3(0, float(courses) * H + 0.75, 0))
+		st.add_part(BrickLib.PART_ROUND, 6, 6, ch, BrickLib.C_LGREY,
+			Vector3(0, float(c) * ch + ch * 0.5, 0), Vector3.ZERO, c == courses - 1)
+	# A CONE roof, which is what a silo has. The cap used to be the same ring
+	# of wall bricks tipped inward by 0.42 radians, and it read as a crown of
+	# blocks balanced on a drum rather than as a roof.
+	var cap_y := 4.2
+	st.add_part(BrickLib.PART_CONE, 7, 7, 1.1, BrickLib.C_DGREY,
+		Vector3(0, cap_y + 0.55, 0))
+	st.add_part(BrickLib.PART_ROUND, 1, 1, 0.32, BrickLib.C_DGREY,
+		Vector3(0, cap_y + 1.26, 0))
 	st.finish()
 	return st
 
@@ -149,14 +239,29 @@ static func water_tower(pos: Vector3) -> Structure:
 	for i in range(legs):
 		var a: float = TAU * float(i) / float(legs) + PI * 0.25
 		var p := Vector3(cos(a) * 1.5, 2.2, sin(a) * 1.5)
-		st.add_brick(1, 1, 4.4, BrickLib.C_DGREY, p, Vector3(0, -a, 0), false)
-	var n := 8
-	for c in range(3):
-		for i in range(n):
-			var a: float = TAU * float(i) / float(n) + float(c) * 0.2
-			var p := Vector3(cos(a) * 1.7, 4.6 + float(c) * H, sin(a) * 1.7)
-			st.add_brick(2, 1, H, BrickLib.C_LGREEN, p, Vector3(0, -a, 0))
-	st.add_brick(6, 6, 0.3, BrickLib.C_DGREY, Vector3(0, 6.5, 0))
+		# Round legs. A water tower stands on poles, and four square posts was
+		# the reason this prop read as scaffolding.
+		st.add_part(BrickLib.PART_ROUND, 1, 1, 4.4, BrickLib.C_DGREY, p,
+			Vector3(0, -a, 0), false)
+	# Cross-bracing, in tiles. Four bare legs looked like the tank was hovering
+	# over them; the braces are what make it read as a structure.
+	for i in range(legs):
+		var a0: float = TAU * float(i) / float(legs) + PI * 0.25
+		var a1: float = TAU * float(i + 1) / float(legs) + PI * 0.25
+		var p0 := Vector3(cos(a0) * 1.5, 0.0, sin(a0) * 1.5)
+		var p1 := Vector3(cos(a1) * 1.5, 0.0, sin(a1) * 1.5)
+		var mid := (p0 + p1) * 0.5
+		var span := p0.distance_to(p1)
+		var yaw := atan2(p1.x - p0.x, p1.z - p0.z)
+		for band in [1.4, 3.0]:
+			st.add_part(BrickLib.PART_TILE, int(round(span / S)), 1, 0.16,
+				BrickLib.C_DGREY, Vector3(mid.x, band, mid.z),
+				Vector3(0, yaw + PI * 0.5, 0), false)
+	# The tank: stacked round bricks, not a ring of boxes.
+	for c in range(8):
+		st.add_part(BrickLib.PART_ROUND, 8, 8, H * 0.5, BrickLib.C_LGREEN,
+			Vector3(0, 4.6 + float(c) * H * 0.5, 0), Vector3.ZERO, false)
+	st.add_part(BrickLib.PART_CONE, 8, 8, 0.9, BrickLib.C_DGREY, Vector3(0, 7.45, 0))
 	st.finish()
 	return st
 
@@ -169,11 +274,19 @@ static func tree(pos: Vector3, scale_f: float = 1.0) -> Structure:
 	st.position = pos
 	# The trunk is PLANTED. Bend is per brick and a brick cannot taper, so any
 	# bend at all here slides the trunk's base along the ground.
-	st.add_brick(1, 1, 2.0 * scale_f, BrickLib.C_BROWN, Vector3(0, 1.0 * scale_f, 0), Vector3.ZERO, false, 0.0)
+	# A ROUND trunk. A tree with a square trunk is the single most obvious
+	# thing in a field of them, and there are a lot of them in this field.
+	st.add_part(BrickLib.PART_ROUND, 2, 2, 2.0 * scale_f, BrickLib.C_BROWN,
+		Vector3(0, 1.0 * scale_f, 0), Vector3.ZERO, false, 0.0)
 	var g := BrickLib.C_GREEN
-	st.add_brick(4, 4, H, g, Vector3(0, 2.2 * scale_f, 0), Vector3.ZERO, true, 0.45)
-	st.add_brick(3, 3, H, g, Vector3(0.2, 2.2 * scale_f + H, -0.1), Vector3.ZERO, true, 0.70)
-	st.add_brick(2, 2, H, BrickLib.C_LGREEN, Vector3(-0.15, 2.2 * scale_f + H * 2.0, 0.15), Vector3.ZERO, true, 1.0)
+	st.add_brick(5, 5, H, g, Vector3(0, 2.2 * scale_f, 0), Vector3.ZERO, true, 0.40)
+	st.add_brick(4, 4, H, g, Vector3(0.2, 2.2 * scale_f + H, -0.1), Vector3.ZERO, true, 0.62)
+	st.add_part(BrickLib.PART_ROUND, 3, 3, H, g,
+		Vector3(0.05, 2.2 * scale_f + H * 2.0, 0.05), Vector3.ZERO, true, 0.80)
+	# The tuft is a cone: it gives the canopy a top instead of ending on a
+	# flat square, and it takes the most bend of anything on the tree.
+	st.add_part(BrickLib.PART_CONE, 3, 3, H * 1.8, BrickLib.C_LGREEN,
+		Vector3(0.0, 2.2 * scale_f + H * 3.4, 0.0), Vector3.ZERO, true, 1.0)
 	st.finish()
 	return st
 
@@ -189,10 +302,16 @@ static func fence_run(from: Vector3, to: Vector3) -> Structure:
 	for i in range(posts + 1):
 		var p := dir * (float(i) * 2.0)
 		st.add_brick(1, 1, 1.2, BrickLib.C_WHITE, Vector3(p.x, 0.6, p.z), Vector3(0, yaw, 0), false)
+		# A picket is pointed. Two cheese slopes back to back is how you point
+		# one, and it costs a single extra part per post.
+		for cs in [-1.0, 1.0]:
+			st.add_part(BrickLib.PART_CHEESE, 1, 1, 0.22, BrickLib.C_WHITE,
+				Vector3(p.x, 1.31, p.z), Vector3(0, yaw + (0.0 if cs > 0.0 else PI), 0), false)
 		if i < posts:
 			var m := dir * (float(i) * 2.0 + 1.0)
-			st.add_brick(4, 1, 0.16, BrickLib.C_WHITE, Vector3(m.x, 0.95, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
-			st.add_brick(4, 1, 0.16, BrickLib.C_WHITE, Vector3(m.x, 0.55, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
+			# Rails are tiles: a fence rail has no studs on it.
+			st.add_part(BrickLib.PART_TILE, 4, 1, 0.16, BrickLib.C_WHITE, Vector3(m.x, 0.95, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
+			st.add_part(BrickLib.PART_TILE, 4, 1, 0.16, BrickLib.C_WHITE, Vector3(m.x, 0.55, m.z), Vector3(0, yaw + PI * 0.5, 0), false)
 	st.finish()
 	return st
 
@@ -203,11 +322,22 @@ static func pickup(pos: Vector3, color: Color, yaw: float = 0.0) -> Structure:
 	st.rotation.y = yaw
 	st.add_brick(8, 4, 0.2, BrickLib.C_DGREY, Vector3(0, 0.42, 0), Vector3.ZERO, false)
 	st.add_brick(5, 4, H * 1.6, color, Vector3(-0.7, 0.95, 0))
-	st.add_brick(4, 4, H * 1.4, BrickLib.C_TRANS, Vector3(0.5, 1.35, 0))
+	# A tiled load bed, because a flatbed is smooth.
+	st.add_part(BrickLib.PART_TILE, 5, 4, BrickLib.PLATE_H, BrickLib.C_DGREY,
+		Vector3(-0.7, 1.52, 0))
+	st.add_brick(4, 4, H * 1.4, color, Vector3(0.5, 1.35, 0))
+	# A raked windscreen out of a slope, sitting on the cab and falling toward
+	# the front of the truck. This one part does more for "that is a truck"
+	# than anything else on the model.
+	st.add_part(BrickLib.PART_SLOPE, 4, 2, H * 1.0, BrickLib.C_TRANS,
+		Vector3(1.0, 2.07, 0), Vector3(0, PI * 0.5, 0))
 	st.add_brick(4, 4, H * 0.9, color, Vector3(1.5, 0.85, 0))
 	for sx in [-1.2, 1.2]:
 		for sz in [-1.0, 1.0]:
-			st.add_brick(1, 1, 0.55, BrickLib.C_BLACK, Vector3(sx, 0.3, sz), Vector3(0, 0, PI * 0.5), false)
+			# Round wheels, with the axle across the truck. The old wheels
+			# were boxes AND were spun about the wrong axis; a box hid it.
+			st.add_part(BrickLib.PART_ROUND, 1, 1, 0.4, BrickLib.C_BLACK,
+				Vector3(sx, 0.3, sz), Vector3(PI * 0.5, 0, 0), false)
 	st.finish()
 	return st
 
@@ -216,10 +346,14 @@ static func drive_in_screen(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
+	# The screen face is TILED. A cinema screen with a grid of studs across it
+	# was the loudest wrong note in the whole set.
 	for c in range(9):
-		_wall(st, Vector3(-5.0, float(c) * H, 0), Vector3(1, 0, 0), 20, 1, BrickLib.C_WHITE, 5, 1)
+		st.add_part(BrickLib.PART_TILE, 20, 1, H, BrickLib.C_WHITE,
+			Vector3(0, float(c) * H + H * 0.5, 0))
 	for xx in [-4.6, 4.6]:
-		st.add_brick(1, 1, 5.6, BrickLib.C_DGREY, Vector3(xx, 2.8, -0.6), Vector3.ZERO, false)
+		st.add_part(BrickLib.PART_ROUND, 1, 1, 5.6, BrickLib.C_DGREY,
+			Vector3(xx, 2.8, -0.6), Vector3.ZERO, false)
 	st.add_brick(22, 2, H, BrickLib.C_RED, Vector3(0, 9.0 * H + 0.3, 0))
 	st.finish()
 	return st
@@ -228,16 +362,17 @@ static func drive_in_screen(pos: Vector3, yaw: float = 0.0) -> Structure:
 static func windmill(pos: Vector3) -> Structure:
 	var st := Structure.new()
 	st.position = pos
+	# A tapering round tower. Four boxes per course arranged in a square was
+	# never going to read as a mill.
 	for c in range(4):
-		var n := 4
-		var r: float = 1.1 - float(c) * 0.2
-		for i in range(n):
-			var a: float = TAU * float(i) / float(n) + float(c) * 0.3
-			st.add_brick(2, 1, H * 2.0, BrickLib.C_LGREY,
-				Vector3(cos(a) * r, float(c) * H * 2.0 + H, sin(a) * r), Vector3(0, -a, 0))
+		var wide := 6 - c
+		st.add_part(BrickLib.PART_ROUND, wide, wide, H * 2.0, BrickLib.C_LGREY,
+			Vector3(0, float(c) * H * 2.0 + H, 0))
+	st.add_part(BrickLib.PART_CONE, 3, 3, 0.7, BrickLib.C_DGREY, Vector3(0, 8.0 * H + 0.35, 0))
 	for i in range(6):
 		var a: float = TAU * float(i) / 6.0
-		st.add_brick(4, 1, 0.14, BrickLib.C_WHITE,
+		# Sail slats are tiles - flat, smooth, no studs.
+		st.add_part(BrickLib.PART_TILE, 4, 1, 0.14, BrickLib.C_WHITE,
 			Vector3(cos(a) * 1.0, 5.4 + sin(a) * 1.0, 0.6), Vector3(0, 0, a), false)
 	st.finish()
 	return st
@@ -254,8 +389,13 @@ static func outhouse(pos: Vector3) -> Structure:
 	_wall(st, Vector3(-hw, 0, hd), Vector3(1, 0, 0), w, 6, wood, 2)
 	_wall(st, Vector3(-hw, 0, -hd), Vector3(0, 0, 1), d, 6, wood, 2)
 	st.add_brick(4, 1, H * 5.0, BrickLib.C_TAN, Vector3(hw + 0.1, H * 2.5, 0), Vector3(0, PI * 0.5, 0))
-	st.add_brick(1, 1, 0.24, BrickLib.C_WHITE, Vector3(hw + 0.24, H * 4.2, 0), Vector3.ZERO, false)
-	st.add_brick(6, 6, 0.24, BrickLib.C_DGREY, Vector3(0, H * 6.2, 0))
+	st.add_part(BrickLib.PART_ROUND, 1, 1, 0.24, BrickLib.C_WHITE,
+		Vector3(hw + 0.24, H * 4.2, 0), Vector3(PI * 0.5, 0, 0), false)
+	# A little lean-to roof: two slope courses, so even the gag prop is built.
+	for i in range(2):
+		st.add_part(BrickLib.PART_SLOPE, 5, 2, H * 0.5, BrickLib.C_DGREY,
+			Vector3(0, H * 6.0 + H * 0.5 * float(i) + H * 0.25,
+				S * (1.0 - float(i))), Vector3(0, PI, 0))
 	st.finish()
 	return st
 
@@ -268,9 +408,13 @@ static func mailbox(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	st.add_brick(1, 1, 1.1, BrickLib.C_BROWN, Vector3(0, 0.55, 0), Vector3.ZERO, false)
-	st.add_brick(2, 2, 0.4, BrickLib.C_DGREY, Vector3(0, 1.28, 0))
-	st.add_brick(1, 1, 0.16, BrickLib.C_RED, Vector3(0.28, 1.36, 0), Vector3.ZERO, false)
+	st.add_part(BrickLib.PART_ROUND, 1, 1, 1.1, BrickLib.C_BROWN,
+		Vector3(0, 0.55, 0), Vector3.ZERO, false)
+	# The box is a round brick on its side - a mailbox has a barrel top.
+	st.add_part(BrickLib.PART_ROUND, 2, 2, 0.9, BrickLib.C_DGREY,
+		Vector3(0, 1.28, 0), Vector3(PI * 0.5, 0, 0), false)
+	st.add_part(BrickLib.PART_TILE, 1, 1, 0.16, BrickLib.C_RED,
+		Vector3(0.36, 1.36, 0), Vector3(0, 0, PI * 0.5), false)
 	st.finish()
 	return st
 
@@ -278,13 +422,13 @@ static func mailbox(pos: Vector3, yaw: float = 0.0) -> Structure:
 static func bin(pos: Vector3) -> Structure:
 	var st := Structure.new()
 	st.position = pos
-	var n := 6
-	for c in range(2):
-		for i in range(n):
-			var a: float = TAU * float(i) / float(n) + float(c) * 0.26
-			st.add_brick(2, 1, H, BrickLib.C_GREEN,
-				Vector3(cos(a) * 0.42, float(c) * H + H * 0.5, sin(a) * 0.42), Vector3(0, -a, 0))
-	st.add_brick(3, 3, 0.18, BrickLib.C_DGREY, Vector3(0, 2.0 * H + 0.1, 0))
+	# Six thin rings, not three thick ones: a smashable wants to come apart
+	# into a handful of pieces, and that is the whole reason to hit it.
+	for c in range(6):
+		st.add_part(BrickLib.PART_ROUND, 2, 2, H * 0.35, BrickLib.C_GREEN,
+			Vector3(0, float(c) * H * 0.35 + H * 0.175, 0), Vector3.ZERO, false)
+	st.add_part(BrickLib.PART_TILE, 3, 3, 0.18, BrickLib.C_DGREY,
+		Vector3(0, 6.0 * H * 0.35 + 0.09, 0))
 	st.finish()
 	return st
 
@@ -294,8 +438,12 @@ static func crate(pos: Vector3, yaw: float = 0.0, stacked: bool = false) -> Stru
 	st.position = pos
 	st.rotation.y = yaw
 	st.add_brick(3, 3, 0.7, BrickLib.C_TAN, Vector3(0, 0.35, 0))
+	st.add_part(BrickLib.PART_TILE, 3, 3, BrickLib.PLATE_H, BrickLib.C_BROWN,
+		Vector3(0, 0.8, 0))
 	if stacked:
-		st.add_brick(3, 3, 0.7, BrickLib.C_BROWN, Vector3(0.1, 1.05, -0.08), Vector3(0, 0.4, 0))
+		st.add_brick(3, 3, 0.7, BrickLib.C_BROWN, Vector3(0.1, 1.15, -0.08), Vector3(0, 0.4, 0))
+		st.add_part(BrickLib.PART_TILE, 3, 3, BrickLib.PLATE_H, BrickLib.C_TAN,
+			Vector3(0.1, 1.6, -0.08), Vector3(0, 0.4, 0))
 	st.finish()
 	return st
 
@@ -304,11 +452,10 @@ static func hay_bale(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	var n := 8
-	for i in range(n):
-		var a: float = TAU * float(i) / float(n)
-		st.add_brick(2, 2, 0.5, BrickLib.C_YELLOW,
-			Vector3(0, 0.55 + cos(a) * 0.42, sin(a) * 0.42), Vector3(a, 0, 0))
+	# A hay bale is a cylinder lying down, not eight blocks in a circle.
+	for i in range(2):
+		st.add_part(BrickLib.PART_ROUND, 3, 3, 0.55, BrickLib.C_YELLOW,
+			Vector3(0, 0.75, -0.28 + 0.56 * float(i)), Vector3(PI * 0.5, 0, 0), false)
 	st.finish()
 	return st
 
@@ -317,8 +464,9 @@ static func road_sign(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	st.add_brick(1, 1, 1.9, BrickLib.C_LGREY, Vector3(0, 0.95, 0), Vector3.ZERO, false)
-	st.add_brick(4, 1, 0.5, BrickLib.C_WHITE, Vector3(0, 2.0, 0))
+	st.add_part(BrickLib.PART_ROUND, 1, 1, 1.9, BrickLib.C_LGREY,
+		Vector3(0, 0.95, 0), Vector3.ZERO, false)
+	st.add_part(BrickLib.PART_TILE, 4, 1, 0.5, BrickLib.C_WHITE, Vector3(0, 2.0, 0))
 	st.finish()
 	return st
 
@@ -327,8 +475,8 @@ static func bench(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	st.add_brick(6, 2, 0.18, BrickLib.C_BROWN, Vector3(0, 0.55, 0))
-	st.add_brick(6, 1, 0.5, BrickLib.C_BROWN, Vector3(0, 0.85, -0.22))
+	st.add_part(BrickLib.PART_TILE, 6, 2, 0.18, BrickLib.C_BROWN, Vector3(0, 0.55, 0))
+	st.add_part(BrickLib.PART_TILE, 6, 1, 0.5, BrickLib.C_BROWN, Vector3(0, 0.85, -0.22))
 	for sx in [-1.1, 1.1]:
 		st.add_brick(1, 2, 0.5, BrickLib.C_DGREY, Vector3(sx, 0.27, 0), Vector3.ZERO, false)
 	st.finish()
@@ -338,12 +486,9 @@ static func bench(pos: Vector3, yaw: float = 0.0) -> Structure:
 static func barrel(pos: Vector3, colour: Color = BrickLib.C_BLUE) -> Structure:
 	var st := Structure.new()
 	st.position = pos
-	var n := 7
-	for c in range(3):
-		for i in range(n):
-			var a: float = TAU * float(i) / float(n) + float(c) * 0.22
-			st.add_brick(2, 1, H, colour,
-				Vector3(cos(a) * 0.36, float(c) * H + H * 0.5, sin(a) * 0.36), Vector3(0, -a, 0))
+	for c in range(6):
+		st.add_part(BrickLib.PART_ROUND, 2, 2, H * 0.5, colour,
+			Vector3(0, float(c) * H * 0.5 + H * 0.25, 0), Vector3.ZERO, c == 5)
 	st.finish()
 	return st
 
@@ -352,9 +497,9 @@ static func trough(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	st.add_brick(6, 3, 0.2, BrickLib.C_LGREY, Vector3(0, 0.3, 0))
+	st.add_part(BrickLib.PART_TILE, 6, 3, 0.2, BrickLib.C_LGREY, Vector3(0, 0.3, 0))
 	for sz in [-0.65, 0.65]:
-		st.add_brick(6, 1, 0.4, BrickLib.C_LGREY, Vector3(0, 0.6, sz))
+		st.add_part(BrickLib.PART_TILE, 6, 1, 0.4, BrickLib.C_LGREY, Vector3(0, 0.6, sz))
 	st.finish()
 	return st
 
@@ -366,8 +511,13 @@ static func crop_patch(pos: Vector3) -> Structure:
 		var a: float = TAU * float(i) / 7.0
 		var r: float = 0.7 + fmod(float(i) * 0.7, 0.8)
 		# A crop stalk is nearly all tip - it should whip, not lean.
-		st.add_brick(1, 1, 0.9 + fmod(float(i), 3.0) * 0.15, BrickLib.C_LGREEN,
+		var stalk_h := 0.9 + fmod(float(i), 3.0) * 0.15
+		st.add_brick(1, 1, stalk_h, BrickLib.C_LGREEN,
 			Vector3(cos(a) * r, 0.5, sin(a) * r), Vector3.ZERO, false, 0.85)
+		# A cheese slope for the head of the stalk, which whips hardest.
+		st.add_part(BrickLib.PART_CHEESE, 1, 1, 0.22, BrickLib.C_YELLOW,
+			Vector3(cos(a) * r, 0.5 + stalk_h * 0.5 + 0.11, sin(a) * r),
+			Vector3(0, a, 0), false, 1.0)
 	st.finish()
 	return st
 
@@ -375,12 +525,11 @@ static func crop_patch(pos: Vector3) -> Structure:
 static func tyre_stack(pos: Vector3) -> Structure:
 	var st := Structure.new()
 	st.position = pos
+	# Tyres are discs. Six little boxes in a ring never was one.
 	for c in range(3):
-		var n := 6
-		for i in range(n):
-			var a: float = TAU * float(i) / float(n) + float(c) * 0.3
-			st.add_brick(2, 1, 0.22, BrickLib.C_BLACK,
-				Vector3(cos(a) * 0.5, 0.12 + float(c) * 0.24, sin(a) * 0.5), Vector3(0, -a, 0), false)
+		st.add_part(BrickLib.PART_ROUND, 3, 3, 0.24, BrickLib.C_BLACK,
+			Vector3(0.0, 0.12 + float(c) * 0.24, 0.0),
+			Vector3(0, float(c) * 0.3, 0), false)
 	st.finish()
 	return st
 

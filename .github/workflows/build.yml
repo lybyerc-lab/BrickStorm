@@ -94,6 +94,36 @@ jobs:
             --script res://tools/wind_probe.gd 2>&1 | tee wind.log | grep -E "WINDPROBE"
           grep -q "WINDPROBE OK" wind.log
 
+      # Back-face culling is a RENDERER behaviour, so headless cannot see it.
+      # Every generated mesh in this game was wound inside-out for weeks - the
+      # camera drew the far surface of every brick - and the self-test passed
+      # throughout, because its winding assertion had the condition inverted.
+      # This probe asks the renderer instead: it draws one quad wound each way
+      # and reports which survives culling, then puts a marker inside a real
+      # brick to show it is not see-through.
+      - name: Winding probe (parts are not inside-out)
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 900x600x24" "$GODOT" --path . --resolution 900x600 \
+            --script res://tools/winding_probe.gd 2>&1 | tee winding.log \
+            | grep -E "WINDING RESULT|OCCLUSION RESULT"
+          grep -q "WINDING RESULT: OK" winding.log
+          grep -q "OCCLUSION RESULT: OK" winding.log
+
+      # Measures every part in the library - triangle count, bounds, enclosed
+      # volume, and the winding of each triangle against its own normal - and
+      # asserts the brick still matches the hand-written mesh the generic
+      # builder replaced. Also does the rendered half of the tear-mapping
+      # check, which headless Godot cannot do: it returns identity for every
+      # MultiMesh instance transform, so a read-back test there always passes.
+      - name: Part probe (part meshes and tear mapping)
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 900x600x24" "$GODOT" --path . --resolution 900x600 \
+            --script res://tools/part_probe.gd 2>&1 | tee parts.log \
+            | grep -E "PARTPROBE|golden|TEAR|FAIL"
+          grep -q "PARTPROBE OK" parts.log
+
       - name: Export Web
         run: |
           mkdir -p build/web

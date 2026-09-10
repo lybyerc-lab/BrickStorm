@@ -6,11 +6,16 @@ extends Node3D
 # [BS:DESTRUCTION:STRUCTURE]
 # Purpose: A brick-built structure: batched visuals until torn, bodies after.
 # Invariants:
-# - An untorn structure is TWO draw calls, not two per brick. All box bodies
-#   share one MultiMesh (unit cube, per-instance scale and colour) and all
-#   studs share another. Before this, a corridor of 150 structures issued
-#   roughly twelve thousand draw calls and ran at 9 fps; see
-#   Docs/PLAYTEST_VS_LEGO_INDY.md.
+# - An untorn structure is ONE DRAW CALL PER PART KIND IT USES, plus one for
+#   its studs - not one per brick. Every instance of a kind shares one
+#   MultiMesh (the unit part, per-instance scale and colour). Before this, a
+#   corridor of 150 structures issued roughly twelve thousand draw calls and
+#   ran at 9 fps; see Docs/PLAYTEST_VS_LEGO_INDY.md.
+# - THE COST OF PART VARIETY IS PAID HERE, so keep a prop's palette of kinds
+#   small and deliberate. A prop built from all eight kinds costs nine draw
+#   calls instead of two. Reaching for a cheese slope where a tile would do is
+#   not free, and a MultiMesh is only allocated for a kind the prop actually
+#   uses, so an unused kind costs nothing at all.
 # - Per-instance colour needs `use_colors` on the MultiMesh AND
 #   `vertex_color_use_as_albedo` on the material. Setting one without the
 #   other silently renders everything white.
@@ -26,23 +31,15 @@ var collider: CollisionShape3D = null
 
 var _bmin := Vector3(1e9, 1e9, 1e9)
 var _bmax := Vector3(-1e9, -1e9, -1e9)
-var _box_mmi: MultiMeshInstance3D = null
+# One MultiMeshInstance3D per part kind actually used, keyed by kind.
+var _part_mmi: Dictionary = {}
 var _stud_mmi: MultiMeshInstance3D = null
 
-static var _box_mesh: Mesh = null
 const SHADER_PATH := "res://shaders/brick.gdshader"
 const STUD_SHADER_PATH := "res://shaders/stud.gdshader"
 
 static var _batch_mat: ShaderMaterial = null
 static var _stud_mat: ShaderMaterial = null
-
-
-# A chamfered unit cube, not a BoxMesh. See BrickLib.brick_mesh - the sharp
-# edges of a plain box are most of why the world read as generic blocks.
-static func _unit_box() -> Mesh:
-	if _box_mesh == null:
-		_box_mesh = BrickLib.brick_mesh()
-	return _box_mesh
 
 
 # Every building, fence, tree and vehicle in the world draws through THIS
@@ -90,10 +87,22 @@ static func set_storm(centre: Vector3, reach: float) -> void:
 # building in the game, and foliage rises toward 1 at the tips. See the shader.
 func add_brick(sw: int, sd: int, h: float, color: Color, pos: Vector3,
 		rot: Vector3 = Vector3.ZERO, studs: bool = true, bend: float = 0.0) -> void:
+	add_part(BrickLib.PART_BRICK, sw, sd, h, color, pos, rot, studs, bend)
+
+
+# The general form. A slope, a tile, an arch and a round brick all place the
+# same way a box does - same stud pitch, same footprint, same tear behaviour -
+# so a prop can reach for the right part without any new placement machinery.
+# `sd` is the part's depth in studs and, for a slope, the direction it falls:
+# slopes descend toward +Z before `rot` is applied.
+func add_part(kind: int, sw: int, sd: int, h: float, color: Color, pos: Vector3,
+		rot: Vector3 = Vector3.ZERO, studs: bool = true, bend: float = 0.0) -> void:
 	entries.append({
+		"kind": kind,
 		"sw": sw, "sd": sd, "h": h, "color": color, "pos": pos, "rot": rot,
 		"bend": bend,
 		"studs": studs, "torn": false, "stud_from": 0, "stud_count": 0,
+		"slot": 0,
 	})
 	var half := Vector3(sw * BrickLib.STUD, h, sd * BrickLib.STUD) * 0.5
 	_bmin = Vector3(minf(_bmin.x, pos.x - half.x), minf(_bmin.y, pos.y - half.y), minf(_bmin.z, pos.z - half.z))
@@ -125,18 +134,22 @@ func finish() -> void:
 
 
 func _build_batches() -> void:
+	# Group by part kind first: each kind gets its own MultiMesh, because a
+	# MultiMesh draws one mesh. Kinds a prop never uses are never allocated.
+	var by_kind: Dictionary = {}
 	var stud_total := 0
-	for e in entries:
+	for i in range(entries.size()):
+		var e: Dictionary = entries[i]
+		var k: int = e["kind"]
+		if not by_kind.has(k):
+			by_kind[k] = []
+		e["slot"] = by_kind[k].size()
+		by_kind[k].append(i)
 		if e["studs"]:
+			var slots: Array = BrickLib.part_stud_slots(k, int(e["sw"]), int(e["sd"]))
 			e["stud_from"] = stud_total
-			e["stud_count"] = int(e["sw"]) * int(e["sd"])
-			stud_total += e["stud_count"]
-
-	var bm := MultiMesh.new()
-	bm.transform_format = MultiMesh.TRANSFORM_3D
-	bm.use_colors = true
-	bm.mesh = _unit_box()
-	bm.instance_count = entries.size()
+			e["stud_count"] = slots.size()
+			stud_total += slots.size()
 
 	var sm: MultiMesh = null
 	if stud_total > 0:
@@ -146,32 +159,40 @@ func _build_batches() -> void:
 		sm.mesh = BrickLib.stud_mesh()
 		sm.instance_count = stud_total
 
-	for i in range(entries.size()):
-		var e: Dictionary = entries[i]
-		var size := Vector3(e["sw"] * BrickLib.STUD, e["h"], e["sd"] * BrickLib.STUD)
-		var xf := _brick_xform(e)
-		bm.set_instance_transform(i, xf * Transform3D(Basis().scaled(size), Vector3.ZERO))
-		# Bend goes in the INSTANCE colour's alpha only. e["color"] stays
-		# opaque because tear() hands it to the debris bodies, and a leaf
-		# brick with alpha 0 would come off the tree invisible.
-		var ec: Color = e["color"]
-		bm.set_instance_color(i, Color(ec.r, ec.g, ec.b, e.get("bend", 0.0)))
+	for k in by_kind.keys():
+		var idxs: Array = by_kind[k]
+		var bm := MultiMesh.new()
+		bm.transform_format = MultiMesh.TRANSFORM_3D
+		bm.use_colors = true
+		bm.mesh = BrickLib.part_mesh(k)
+		bm.instance_count = idxs.size()
+		for slot in range(idxs.size()):
+			var e: Dictionary = entries[idxs[slot]]
+			var size := Vector3(e["sw"] * BrickLib.STUD, e["h"], e["sd"] * BrickLib.STUD)
+			var xf := _brick_xform(e)
+			bm.set_instance_transform(slot, xf * Transform3D(Basis().scaled(size), Vector3.ZERO))
+			# Bend goes in the INSTANCE colour's alpha only. e["color"] stays
+			# opaque because tear() hands it to the debris bodies, and a leaf
+			# brick with alpha 0 would come off the tree invisible.
+			var ec: Color = e["color"]
+			bm.set_instance_color(slot, Color(ec.r, ec.g, ec.b, e.get("bend", 0.0)))
 
-		if sm != null and e["studs"]:
-			var k: int = e["stud_from"]
-			for x in range(int(e["sw"])):
-				for z in range(int(e["sd"])):
-					var px: float = (float(x) + 0.5) * BrickLib.STUD - size.x * 0.5
-					var pz: float = (float(z) + 0.5) * BrickLib.STUD - size.z * 0.5
-					var local := Vector3(px, e["h"] * 0.5 + BrickLib.STUD_H * 0.5, pz)
-					sm.set_instance_transform(k, xf * Transform3D(Basis(), local))
-					sm.set_instance_color(k, Color(ec.r, ec.g, ec.b, e.get("bend", 0.0)))
-					k += 1
+			if sm != null and e["studs"]:
+				var j: int = e["stud_from"]
+				for u in BrickLib.part_stud_slots(k, int(e["sw"]), int(e["sd"])):
+					# Stud slots arrive in unit-part space, so a slope puts its
+					# row on the ledge and a tile asks for none at all.
+					var local := Vector3(u.x * size.x,
+						e["h"] * 0.5 + BrickLib.STUD_H * 0.5, u.z * size.z)
+					sm.set_instance_transform(j, xf * Transform3D(Basis(), local))
+					sm.set_instance_color(j, Color(ec.r, ec.g, ec.b, e.get("bend", 0.0)))
+					j += 1
 
-	_box_mmi = MultiMeshInstance3D.new()
-	_box_mmi.multimesh = bm
-	_box_mmi.material_override = _material()
-	add_child(_box_mmi)
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = bm
+		mmi.material_override = _material()
+		add_child(mmi)
+		_part_mmi[k] = mmi
 
 	if sm != null:
 		_stud_mmi = MultiMeshInstance3D.new()
@@ -193,8 +214,9 @@ func _build_batches() -> void:
 func _hide_instance(i: int) -> void:
 	var e: Dictionary = entries[i]
 	var zero := Transform3D(Basis().scaled(Vector3.ZERO), e["pos"])
-	if _box_mmi != null:
-		_box_mmi.multimesh.set_instance_transform(i, zero)
+	var mmi: MultiMeshInstance3D = _part_mmi.get(e["kind"], null)
+	if mmi != null:
+		mmi.multimesh.set_instance_transform(int(e["slot"]), zero)
 	if _stud_mmi != null and e["studs"]:
 		for k in range(int(e["stud_from"]), int(e["stud_from"]) + int(e["stud_count"])):
 			_stud_mmi.multimesh.set_instance_transform(k, zero)
@@ -251,7 +273,7 @@ func tear(world_center: Vector3, radius: float, debris_parent: Node3D, max_count
 		e["torn"] = true
 		torn_count += 1
 		_hide_instance(i)
-		var b := BrickLib.brick_body(e["sw"], e["sd"], e["h"], e["color"])
+		var b := BrickLib.brick_body(e["sw"], e["sd"], e["h"], e["color"], e["kind"])
 		debris_parent.add_child(b)
 		b.global_transform = xf
 		out.append(b)
