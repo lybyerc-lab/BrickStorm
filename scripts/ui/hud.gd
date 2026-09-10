@@ -1,11 +1,14 @@
 extends CanvasLayer
 class_name GameHUD
 
-# UI Nodes
+const MinifigCharacter = preload("res://scripts/actors/minifig_character.gd")
+const StudField = preload("res://scripts/economy/stud_field.gd")
+const Tornado = preload("res://scripts/storm/tornado.gd")
+
 var portrait_label: Label
 var character_name_label: Label
 var hearts_container: HBoxContainer
-var heart_icons: Array[ColorRect] = []
+var heart_icons: Array[Label] = []
 
 var true_chaser_bar: ProgressBar
 var true_chaser_label: Label
@@ -16,10 +19,9 @@ var objective_label: Label
 
 # Mobile touch controls
 var touch_root: Control
-var stick_base: Control
-var stick_knob: Control
+var stick_base: Panel
+var stick_knob: Panel
 var stick_active: bool = false
-var stick_touch_id: int = -1
 var stick_center: Vector2 = Vector2.ZERO
 var stick_vector: Vector2 = Vector2.ZERO
 
@@ -35,17 +37,16 @@ func _ready() -> void:
 	_connect_events()
 
 func _create_ui_layout() -> void:
-	# Top bar container
 	var top_bar = Control.new()
 	top_bar.name = "TopBar"
 	top_bar.set_anchors_preset(Control.PRESET_FULL_RECT)
 	top_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(top_bar)
 
-	# --- TOP LEFT: Character & Hearts ---
+	# --- TOP LEFT: Character Portrait & Hearts ---
 	var char_panel = PanelContainer.new()
-	char_panel.position = Vector2(24, 20)
-	char_panel.custom_minimum_size = Vector2(220, 80)
+	char_panel.position = Vector2(24, 18)
+	char_panel.custom_minimum_size = Vector2(250, 90)
 	top_bar.add_child(char_panel)
 	
 	var char_vbox = VBoxContainer.new()
@@ -56,80 +57,88 @@ func _create_ui_layout() -> void:
 	
 	portrait_label = Label.new()
 	portrait_label.text = "🤠"
-	portrait_label.add_theme_font_size_override("font_size", 28)
+	portrait_label.add_theme_font_size_override("font_size", 32)
 	char_header.add_child(portrait_label)
+	
+	var name_box = VBoxContainer.new()
+	char_header.add_child(name_box)
 	
 	character_name_label = Label.new()
 	character_name_label.text = "JO [READER]"
 	character_name_label.add_theme_font_size_override("font_size", 20)
-	char_header.add_child(character_name_label)
+	name_box.add_child(character_name_label)
 	
 	btn_swap = Button.new()
-	btn_swap.text = "SWAP [U]"
+	btn_swap.text = "SWAP HERO [U]"
 	btn_swap.pressed.connect(_on_swap_pressed)
-	char_header.add_child(btn_swap)
+	name_box.add_child(btn_swap)
 	
 	hearts_container = HBoxContainer.new()
 	char_vbox.add_child(hearts_container)
 	for i in range(4):
-		var h = ColorRect.new()
-		h.custom_minimum_size = Vector2(22, 22)
-		h.color = Color(1.0, 0.2, 0.2)
+		var h = Label.new()
+		h.text = "❤️"
+		h.add_theme_font_size_override("font_size", 22)
 		hearts_container.add_child(h)
 		heart_icons.append(h)
 
-	# --- TOP CENTER: True Chaser Bar ---
+	# --- TOP CENTER: True Chaser Meter ---
 	var tc_box = VBoxContainer.new()
-	tc_box.position = Vector2(460, 16)
-	tc_box.custom_minimum_size = Vector2(360, 50)
+	tc_box.position = Vector2(430, 14)
+	tc_box.custom_minimum_size = Vector2(420, 56)
 	top_bar.add_child(tc_box)
 	
 	true_chaser_label = Label.new()
-	true_chaser_label.text = "★ TRUE CHASER ★"
+	true_chaser_label.text = "★ TRUE CHASER STATUS ★"
 	true_chaser_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	true_chaser_label.add_theme_font_size_override("font_size", 16)
+	true_chaser_label.modulate = Color(1.0, 0.88, 0.2)
 	tc_box.add_child(true_chaser_label)
 	
 	true_chaser_bar = ProgressBar.new()
 	true_chaser_bar.max_value = 100.0
 	true_chaser_bar.value = 0.0
 	true_chaser_bar.show_percentage = false
-	true_chaser_bar.custom_minimum_size = Vector2(360, 18)
+	true_chaser_bar.custom_minimum_size = Vector2(420, 22)
 	tc_box.add_child(true_chaser_bar)
 
-	# --- TOP RIGHT: Studs & Multiplier ---
-	var stud_box = VBoxContainer.new()
-	stud_box.position = Vector2(980, 20)
-	stud_box.custom_minimum_size = Vector2(260, 80)
-	top_bar.add_child(stud_box)
+	# --- TOP RIGHT: Stud Counter & Risk Band ---
+	var stud_panel = PanelContainer.new()
+	stud_panel.position = Vector2(940, 18)
+	stud_panel.custom_minimum_size = Vector2(310, 90)
+	top_bar.add_child(stud_panel)
+	
+	var stud_vbox = VBoxContainer.new()
+	stud_panel.add_child(stud_vbox)
 	
 	var stud_row = HBoxContainer.new()
-	stud_box.add_child(stud_row)
+	stud_vbox.add_child(stud_row)
 	
 	var stud_icon = Label.new()
-	stud_icon.text = "🟡 STUDS:"
-	stud_icon.add_theme_font_size_override("font_size", 22)
+	stud_icon.text = "🪙"
+	stud_icon.add_theme_font_size_override("font_size", 28)
 	stud_row.add_child(stud_icon)
 	
 	stud_label = Label.new()
 	stud_label.text = "0"
-	stud_label.add_theme_font_size_override("font_size", 28)
+	stud_label.add_theme_font_size_override("font_size", 30)
+	stud_label.modulate = Color(1.0, 0.9, 0.2)
 	stud_row.add_child(stud_label)
 	
 	multiplier_label = Label.new()
 	multiplier_label.text = "MULTIPLIER: x1 [GREEN ZONE]"
 	multiplier_label.add_theme_font_size_override("font_size", 16)
 	multiplier_label.modulate = Color(0.3, 1.0, 0.4)
-	stud_box.add_child(multiplier_label)
+	stud_vbox.add_child(multiplier_label)
 
 	# --- OBJECTIVE BANNER ---
 	objective_label = Label.new()
-	objective_label.text = "MISSION: Smash debris, assemble DOROTHY, and deploy into the STORM!"
-	objective_label.position = Vector2(240, 90)
-	objective_label.custom_minimum_size = Vector2(800, 30)
+	objective_label.text = "★ MISSION: Recover DOROTHY at the farmstead & deploy into the TWISTER! ★"
+	objective_label.position = Vector2(200, 96)
+	objective_label.custom_minimum_size = Vector2(880, 32)
 	objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	objective_label.add_theme_font_size_override("font_size", 18)
-	objective_label.modulate = Color(1.0, 0.95, 0.5)
+	objective_label.add_theme_font_size_override("font_size", 17)
+	objective_label.modulate = Color(1.0, 0.92, 0.4)
 	top_bar.add_child(objective_label)
 
 	# --- MOBILE TOUCH CONTROLS OVERLAY ---
@@ -142,40 +151,40 @@ func _setup_touch_controls() -> void:
 	touch_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(touch_root)
 
-	# Virtual joystick area in bottom-left
+	# Virtual joystick
 	stick_base = Panel.new()
-	stick_base.position = Vector2(80, 480)
-	stick_base.custom_minimum_size = Vector2(160, 160)
-	stick_base.modulate = Color(1, 1, 1, 0.4)
+	stick_base.position = Vector2(70, 470)
+	stick_base.custom_minimum_size = Vector2(170, 170)
+	stick_base.modulate = Color(1, 1, 1, 0.35)
 	touch_root.add_child(stick_base)
-	stick_center = stick_base.position + Vector2(80, 80)
+	stick_center = stick_base.position + Vector2(85, 85)
 
-	stick_knob = ColorRect.new()
-	stick_knob.size = Vector2(60, 60)
-	stick_knob.position = Vector2(50, 50)
-	stick_knob.color = Color(1, 1, 1, 0.7)
+	stick_knob = Panel.new()
+	stick_knob.size = Vector2(65, 65)
+	stick_knob.position = Vector2(52, 52)
+	stick_knob.modulate = Color(1, 1, 1, 0.8)
 	stick_base.add_child(stick_knob)
 
-	# Touch Action Buttons in bottom-right
+	# Large circular action buttons in classic TT layout
 	btn_smash = Button.new()
-	btn_smash.text = "SMASH\n[J / Click]"
-	btn_smash.position = Vector2(980, 540)
-	btn_smash.custom_minimum_size = Vector2(110, 110)
+	btn_smash.text = "👊 SMASH\n[J / Click]"
+	btn_smash.position = Vector2(960, 520)
+	btn_smash.custom_minimum_size = Vector2(125, 125)
 	btn_smash.button_down.connect(func(): if is_instance_valid(target_player): target_player.touch_smash_pressed = true)
 	touch_root.add_child(btn_smash)
 
 	btn_build = Button.new()
-	btn_build.text = "BUILD\n[E / Hold]"
-	btn_build.position = Vector2(1110, 460)
-	btn_build.custom_minimum_size = Vector2(110, 110)
+	btn_build.text = "🧱 BUILD\n[E / Hold]"
+	btn_build.position = Vector2(1110, 430)
+	btn_build.custom_minimum_size = Vector2(125, 125)
 	btn_build.button_down.connect(func(): if is_instance_valid(target_player): target_player.touch_build_held = true)
 	btn_build.button_up.connect(func(): if is_instance_valid(target_player): target_player.touch_build_held = false)
 	touch_root.add_child(btn_build)
 
 	btn_jump = Button.new()
-	btn_jump.text = "JUMP\n[Space]"
-	btn_jump.position = Vector2(1110, 590)
-	btn_jump.custom_minimum_size = Vector2(110, 80)
+	btn_jump.text = "🪽 JUMP\n[Space]"
+	btn_jump.position = Vector2(1110, 575)
+	btn_jump.custom_minimum_size = Vector2(125, 85)
 	btn_jump.button_down.connect(func(): if is_instance_valid(target_player): target_player.touch_jump_pressed = true)
 	touch_root.add_child(btn_jump)
 
@@ -183,14 +192,13 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT):
 		var pos = event.position
 		if event.is_pressed():
-			# Check left side of screen for joystick
 			if pos.x < 450 and pos.y > 350:
 				stick_active = true
 				_update_stick(pos)
 		else:
 			stick_active = false
 			stick_vector = Vector2.ZERO
-			stick_knob.position = Vector2(50, 50)
+			stick_knob.position = Vector2(52, 52)
 			if is_instance_valid(target_player):
 				target_player.touch_move_vector = Vector2.ZERO
 				
@@ -203,7 +211,7 @@ func _update_stick(touch_pos: Vector2) -> void:
 	var max_radius = 65.0
 	if delta.length() > max_radius:
 		delta = delta.normalized() * max_radius
-	stick_knob.position = Vector2(50, 50) + delta
+	stick_knob.position = Vector2(52, 52) + delta
 	stick_vector = delta / max_radius
 	if is_instance_valid(target_player):
 		target_player.touch_move_vector = stick_vector
@@ -233,29 +241,34 @@ func _on_character_swapped(is_jo: bool) -> void:
 	if is_jo:
 		portrait_label.text = "🤠"
 		character_name_label.text = "JO [READER]"
-		character_name_label.modulate = Color(0.4, 0.7, 1.0)
+		character_name_label.modulate = Color(0.4, 0.75, 1.0)
 	else:
 		portrait_label.text = "🧢"
 		character_name_label.text = "BILL [EXTREME]"
-		character_name_label.modulate = Color(1.0, 0.7, 0.3)
+		character_name_label.modulate = Color(1.0, 0.72, 0.28)
 
 func _on_health_changed(hearts: int, max_h: int) -> void:
 	for i in range(heart_icons.size()):
 		if i < hearts:
-			heart_icons[i].color = Color(1.0, 0.2, 0.2)
+			heart_icons[i].text = "❤️"
+			heart_icons[i].modulate = Color(1, 1, 1, 1)
 		else:
-			heart_icons[i].color = Color(0.2, 0.2, 0.2, 0.4) # Empty heart
+			heart_icons[i].text = "🖤"
+			heart_icons[i].modulate = Color(1, 1, 1, 0.4)
 
 func _on_studs_changed(total: int, mult: int, pct: float) -> void:
 	stud_label.text = "%d" % total
 	true_chaser_bar.value = pct * 100.0
 	
-	# Scale animation bounce on stud count
 	var tween = create_tween()
-	stud_label.scale = Vector2(1.2, 1.2)
-	tween.tween_property(stud_label, "scale", Vector2(1.0, 1.0), 0.15)
+	stud_label.scale = Vector2(1.25, 1.25)
+	tween.tween_property(stud_label, "scale", Vector2(1.0, 1.0), 0.14)
 
 func _on_risk_band_entered(band: String, mult: int) -> void:
+	var tween = create_tween()
+	multiplier_label.scale = Vector2(1.2, 1.2)
+	tween.tween_property(multiplier_label, "scale", Vector2(1.0, 1.0), 0.15)
+	
 	match band:
 		"GREEN":
 			multiplier_label.text = "MULTIPLIER: x1 [GREEN ZONE]"
@@ -271,7 +284,7 @@ func _on_risk_band_entered(band: String, mult: int) -> void:
 			multiplier_label.modulate = Color(1.0, 0.2, 0.2)
 
 func _on_true_chaser_achieved() -> void:
-	true_chaser_label.text = "🎉 TRUE CHASER COMPLETE! 🎉"
+	true_chaser_label.text = "🎉 TRUE CHASER STATUS UNLOCKED! 🎉"
 	true_chaser_label.modulate = Color(1.0, 0.9, 0.1)
-	objective_label.text = "★ TRUE CHASER UNLOCKED! NOW DEPLOY DOROTHY! ★"
-	objective_label.modulate = Color(1.0, 0.9, 0.2)
+	objective_label.text = "★ TRUE CHASER COMPLETE! NOW DEPLOY DOROTHY INTO THE VORTEX! ★"
+	objective_label.modulate = Color(1.0, 0.92, 0.2)
