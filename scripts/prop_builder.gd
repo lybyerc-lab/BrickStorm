@@ -408,8 +408,9 @@ static func mailbox(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	st.add_part(BrickLib.PART_ROUND, 1, 1, 1.1, BrickLib.C_BROWN,
-		Vector3(0, 0.55, 0), Vector3.ZERO, false)
+	for i in range(2):
+		st.add_part(BrickLib.PART_ROUND, 1, 1, 0.55, BrickLib.C_BROWN,
+			Vector3(0, 0.275 + 0.55 * float(i), 0), Vector3.ZERO, false)
 	# The box is a round brick on its side - a mailbox has a barrel top.
 	st.add_part(BrickLib.PART_ROUND, 2, 2, 0.9, BrickLib.C_DGREY,
 		Vector3(0, 1.28, 0), Vector3(PI * 0.5, 0, 0), false)
@@ -437,25 +438,37 @@ static func crate(pos: Vector3, yaw: float = 0.0, stacked: bool = false) -> Stru
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	st.add_brick(3, 3, 0.7, BrickLib.C_TAN, Vector3(0, 0.35, 0))
-	st.add_part(BrickLib.PART_TILE, 3, 3, BrickLib.PLATE_H, BrickLib.C_BROWN,
-		Vector3(0, 0.8, 0))
+	# Four panels and a lid, not one solid block. A real crate is built this
+	# way, and a two-part prop cannot survive three bites however small the
+	# bite is - part count is the floor. See BS:PLAYER:SMASH.
+	_crate_box(st, Vector3(0, 0.35, 0), 0.0, BrickLib.C_TAN, BrickLib.C_BROWN)
 	if stacked:
-		st.add_brick(3, 3, 0.7, BrickLib.C_BROWN, Vector3(0.1, 1.15, -0.08), Vector3(0, 0.4, 0))
-		st.add_part(BrickLib.PART_TILE, 3, 3, BrickLib.PLATE_H, BrickLib.C_TAN,
-			Vector3(0.1, 1.6, -0.08), Vector3(0, 0.4, 0))
+		_crate_box(st, Vector3(0.1, 1.15, -0.08), 0.4, BrickLib.C_BROWN, BrickLib.C_TAN)
 	st.finish()
 	return st
+
+
+# One crate: four walls and a lid, at `yaw`.
+static func _crate_box(st: Structure, centre: Vector3, yaw: float,
+		body: Color, lid: Color) -> void:
+	for i in range(4):
+		var a: float = yaw + PI * 0.5 * float(i)
+		var off := Vector3(sin(a) * S, 0.0, cos(a) * S)
+		st.add_brick(3, 1, 0.7, body, centre + off, Vector3(0, a, 0), false)
+	st.add_part(BrickLib.PART_TILE, 3, 3, BrickLib.PLATE_H, lid,
+		centre + Vector3(0, 0.45, 0), Vector3(0, yaw, 0))
 
 
 static func hay_bale(pos: Vector3, yaw: float = 0.0) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	st.rotation.y = yaw
-	# A hay bale is a cylinder lying down, not eight blocks in a circle.
-	for i in range(2):
-		st.add_part(BrickLib.PART_ROUND, 3, 3, 0.55, BrickLib.C_YELLOW,
-			Vector3(0, 0.75, -0.28 + 0.56 * float(i)), Vector3(PI * 0.5, 0, 0), false)
+	# A hay bale is a cylinder lying down, not eight blocks in a circle. Four
+	# short rolls rather than two long ones: the silhouette is identical and it
+	# gives a smash something to take a bite out of.
+	for i in range(4):
+		st.add_part(BrickLib.PART_ROUND, 3, 3, 0.28, BrickLib.C_YELLOW,
+			Vector3(0, 0.75, -0.42 + 0.28 * float(i)), Vector3(PI * 0.5, 0, 0), false)
 	st.finish()
 	return st
 
@@ -526,7 +539,7 @@ static func tyre_stack(pos: Vector3) -> Structure:
 	var st := Structure.new()
 	st.position = pos
 	# Tyres are discs. Six little boxes in a ring never was one.
-	for c in range(3):
+	for c in range(4):
 		st.add_part(BrickLib.PART_ROUND, 3, 3, 0.24, BrickLib.C_BLACK,
 			Vector3(0.0, 0.12 + float(c) * 0.24, 0.0),
 			Vector3(0, float(c) * 0.3, 0), false)

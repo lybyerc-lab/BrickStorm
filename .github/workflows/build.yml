@@ -65,6 +65,20 @@ jobs:
           "$GODOT" --headless --path . -- --selftest 2>&1 | tee selftest.log | grep -E "SELFTEST"
           grep -q "SELFTEST OK" selftest.log
 
+      # How many hits a prop takes is a GAME PACING number, and it used to be
+      # an accident of how each model happened to be subdivided: max_count was
+      # ten bricks, more than any small prop contains, so everything came apart
+      # in one hit. Rebuilding the smashables from round parts then halved the
+      # measured SMASH rate without anyone touching the smash. This asserts
+      # every smashable takes at least three hits AND that the number does not
+      # move when a prop is rebuilt at a different granularity.
+      - name: Smash probe (a smash takes a bite, not a prop)
+        run: |
+          set -o pipefail
+          "$GODOT" --headless --path . --script res://tools/smash_probe.gd 2>&1 \
+            | tee smash.log | grep -E "hits|SMASHPROBE|FAIL"
+          grep -q "SMASHPROBE OK" smash.log
+
       # The probe renders for real, so it needs a display. Everything else in
       # this job is headless.
       #

@@ -968,6 +968,20 @@ func _on_build_released() -> void:
 #   is what keeps the risk economy alive alongside free-for-all smashing.
 # - Every smash produces a comic-book word (BS:COMEDY:POPUPS). A silent smash
 #   is a wasted joke.
+# - A SMASH TAKES A BITE, NOT A PROP. The bite is bounded by VOLUME, not by a
+#   brick count. It used to be capped at ten bricks, which is more than any
+#   small prop contains, so a barrel, a bin, a crate or a hay bale came apart
+#   in a single hit. That made the pace of the game a side effect of how each
+#   model happened to be subdivided: rebuilding the smashables from round parts
+#   (a barrel went from 21 pieces to 6) halved the measured SMASH rate - from
+#   6.3/min to a four-round mean of 3.4 - without anyone touching this verb.
+#   Measured in Docs/PLAYTEST_VS_LEGO_INDY.md follow-up 2; guarded by
+#   tools/smash_probe.gd, which requires every smashable to take at least
+#   three hits and requires that number NOT to move when a prop is rebuilt at
+#   a different granularity.
+# - A budget cannot take a fraction of a part, so a prop needs enough pieces
+#   for three bites to be possible. Part count is the floor, the budget is the
+#   ceiling, and the probe checks both.
 # ============================================================================
 func _do_smash() -> void:
 	if driving != null:
@@ -983,7 +997,7 @@ func _do_smash() -> void:
 		if st.global_position.distance_to(p) > reach + 12.0:
 			continue
 		var strength := Structure.HEAVY_STRENGTH if player.character == Player.Character.BILL else 1.0
-		var bodies := st.tear(p, reach, debris_root, 10 - hit, strength)
+		var bodies := st.tear(p, reach, debris_root, 10 - hit, strength, Structure.SMASH_BITE)
 		for b in bodies:
 			var away: Vector3 = (b.global_position - p).normalized()
 			b.apply_central_impulse((away + Vector3.UP * 0.9) * 6.5 * b.mass)

@@ -80,6 +80,11 @@ func _run() -> void:
 		["outhouse", PropBuilder.outhouse(Vector3.ZERO), 8.0, 3.2, 1.6],
 		["fence", PropBuilder.fence_run(Vector3(-4, 0, 0), Vector3(4, 0, 0)), 9.0, 2.4, 0.9],
 		["drive_in", PropBuilder.drive_in_screen(Vector3.ZERO, 0.0), 20.0, 7.0, 3.0],
+		["crate", PropBuilder.crate(Vector3.ZERO, 0.0, true), 4.0, 1.8, 0.8],
+		["hay_bale", PropBuilder.hay_bale(Vector3.ZERO, 0.0), 4.0, 1.6, 0.7],
+		["tyre_stack", PropBuilder.tyre_stack(Vector3.ZERO), 3.4, 1.4, 0.5],
+		["mailbox", PropBuilder.mailbox(Vector3.ZERO, 0.0), 3.6, 1.6, 0.9],
+		["barrel", PropBuilder.barrel(Vector3.ZERO), 3.6, 1.5, 0.9],
 	]
 	for shot in shots:
 		var st: Structure = shot[1]

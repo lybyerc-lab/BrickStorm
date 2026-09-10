@@ -252,23 +252,78 @@ func is_rubble() -> bool:
 # - Debris bodies inherit the brick's exact world transform, so a structure
 #   never visibly jumps as it comes apart.
 # ============================================================================
+# Cubic world units one player smash may remove. Roughly half a 2x2 brick,
+# which is one ring off a barrel or one course off a bin. It lives here rather
+# than in main.gd because tools/smash_probe.gd has to bite with exactly the
+# number the game bites with - a probe that hard-codes its own copy is testing
+# itself.
+const SMASH_BITE := 0.35
+
+
+# The bounding volume of one part, in cubic world units. This is what a
+# volume-bounded bite is measured against, and it is deliberately the bounding
+# box rather than the true volume of a cone or a cylinder: the budget is a
+# game-feel number, and making it depend on which part kind a builder reached
+# for is exactly the coupling `volume_budget` exists to remove.
+static func _entry_volume(e: Dictionary) -> float:
+	return float(e["sw"]) * BrickLib.STUD * float(e["h"]) \
+		* float(e["sd"]) * BrickLib.STUD
+
+
+# `volume_budget` above zero turns this from "tear whatever is in range, up to
+# max_count bricks" into A BITE: the parts nearest the strike point come away
+# first, and only until that much volume has been removed.
+#
+# Why volume and not a brick count: the count is what coupled the pace of the
+# game to how a model happens to be built. max_count is 10, which is larger
+# than any small prop, so every barrel, bin, crate and hay bale in the world
+# came apart in ONE hit - and since a hit that finds nothing logs no SMASH
+# event, rebuilding those props from round parts (barrel 21 pieces to 6) halved
+# the measured player-verb rate without anyone touching the verb. See
+# Docs/PLAYTEST_VS_LEGO_INDY.md, follow-up 2, and tools/smash_probe.gd.
+#
+# A budget cannot remove a fraction of a part, so a prop built from fewer parts
+# than the number of hits wanted will still clear early. Part count is the
+# floor; the budget is the ceiling. Both are needed.
 func tear(world_center: Vector3, radius: float, debris_parent: Node3D, max_count: int,
-		strength: float = 1.0) -> Array:
+		strength: float = 1.0, volume_budget: float = -1.0) -> Array:
 	var out: Array = []
 	if heavy and strength < HEAVY_STRENGTH:
 		return out
 	if torn_count >= entries.size():
 		return out
 	var r2 := radius * radius
+	var order: Array = []
 	for i in range(entries.size()):
-		if out.size() >= max_count:
-			break
 		var e: Dictionary = entries[i]
 		if e["torn"]:
 			continue
 		var xf := global_transform * _brick_xform(e)
-		if xf.origin.distance_squared_to(world_center) > r2:
+		var d2 := xf.origin.distance_squared_to(world_center)
+		if d2 > r2:
 			continue
+		order.append([d2, i])
+	if volume_budget > 0.0:
+		# Nearest-first, so what comes away is the part of the model you
+		# actually hit rather than whichever bricks happen to sit early in the
+		# entry list. The funnel deliberately does NOT sort: its tear pattern
+		# and the economy on top of it are tuned against the existing order,
+		# and this change is scoped to the player's smash.
+		order.sort_custom(func(a, b): return a[0] < b[0])
+	var spent := 0.0
+	for c in order:
+		if out.size() >= max_count:
+			break
+		var i: int = c[1]
+		var e: Dictionary = entries[i]
+		var vol := _entry_volume(e)
+		# Always take at least one part - a bite smaller than the smallest
+		# piece would make the prop indestructible - then stop before going
+		# over budget.
+		if volume_budget > 0.0 and not out.is_empty() and spent + vol > volume_budget:
+			break
+		spent += vol
+		var xf := global_transform * _brick_xform(e)
 
 		e["torn"] = true
 		torn_count += 1

@@ -359,3 +359,85 @@ results.** Either seed the round the way `--capture` does (`CAPTURE_SEED`) so
 runs are comparable, or report N≥4 with a spread. Until one of those is done,
 the only trustworthy numbers out of this harness are bricks torn, stud rate and
 structure count.
+
+---
+
+# Follow-up 3 (2026-09-10): a smash takes a bite, not a prop
+
+Follow-up 2 measured SMASH/min falling to a four-round mean of 3.4 and blamed
+the round-part rebuild. That was half right. The mechanism turned out to be
+somewhere else, and finding it took a probe rather than a guess.
+
+## What was actually wrong
+
+`Structure.tear()` has always taken a radius, so "make the smash tear a fixed
+radius" would have changed nothing — **the radius was never the problem.** The
+problem was the other cap: `max_count = 10` bricks per hit. No small prop
+contains ten parts, so a barrel, bin, crate, hay bale, tyre stack or mailbox
+came apart **in exactly one hit**, and one hit is one SMASH event.
+
+`tools/smash_probe.gd` measures hits-to-rubble directly. Before the fix, every
+single smashable in the game read **1**. The old 21-piece barrel had read 2, and
+that 2 → 1 is the entire measured drop.
+
+So the pace of the game was an accident of how each model happened to be
+subdivided. That is the real finding: **an art decision was silently setting a
+gameplay number**, and nothing in the project would have caught it.
+
+## The fix
+
+A player smash is now bounded by **volume**, not by a brick count:
+`Structure.SMASH_BITE = 0.35` cubic world units, about half a 2x2 brick — one
+ring off a barrel. Parts nearest the strike point come away first, so what
+breaks is the part of the model you hit.
+
+A budget cannot remove a fraction of a part, so **part count is the floor and
+the budget is the ceiling; both are needed.** Four props were too coarse for
+three bites to be possible and were subdivided — the crate is now four panels
+and a lid (which is how a LEGO crate is really built), the hay bale four short
+rolls instead of two long ones, the tyre stack four tyres, the mailbox post two
+segments. No silhouette changed.
+
+| prop | parts | hits before | hits after |
+|---|---|---|---|
+| barrel | 6 | 1 | 4 |
+| bin | 7 | 1 | 4 |
+| crate | 5 | 1 | 3 |
+| hay bale | 4 | 1 | 3 |
+| tyre stack | 4 | 1 | 3 |
+| mailbox | 4 | 1 | 3 |
+
+Decoupling check — the same drum, same volume, subdivided 6, 12 and 21 ways:
+**4, 4, 3 hits.** At 3 courses it is 2, because parts coarser than the bite
+cannot be decoupled from each other; the probe reports that as a floor rather
+than a failure, since it is a property of the model.
+
+## Measured, four rounds each side
+
+| metric | before (n=4) | after (n=4) |
+|---|---|---|
+| SMASH / min | min 2.1 · med 3.1 · max 5.1 | **min 5.4 · med 5.6 · max 11.4** |
+| longest silence | min 6.3 · med 11.2 · max 14.6 | min 6.1 · **med 6.7** · max 30.3 |
+| bricks torn | 136 – 143 | 144 – 149 |
+| final score | 791 – 3,038 | 1,495 – 2,622 |
+
+**The smash distributions do not overlap**: the worst round after the fix
+(5.4/min) beats the best round before it (5.1/min). For n=4 on a metric with
+this much spread, non-overlapping sets is about as strong as the harness can
+say anything.
+
+Median dead time also roughly halved, 11.2 s to 6.7 s. **One round in four is
+an outlier at 30.3 s**, and it is not the smash: the event log shows a clean
+30-second stretch from t=25.8 with no pickups and no smashes at all, which is
+the autopilot crossing empty ground. Same unseeded-route variance that made
+follow-up 2's single-run figures untrustworthy. Four rounds is enough to
+separate the smash rate and not enough to characterise dead time.
+
+## Knock-on effects, named rather than discovered later
+
+- `--selftest` reports `smash_torn` 13 → 6 and `gate_torn` 18 → 5. Expected:
+  the same number of smashes now removes far less.
+- The set piece's heavy gate is a 23-part silo, so it needs about **13 hits**
+  from Bill instead of 4. Smash has no cooldown, so that is a second or two of
+  mashing — arguably the right feel for a gate, but it is a pacing change and
+  it was not asked for.
