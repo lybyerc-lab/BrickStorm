@@ -16,41 +16,53 @@ The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Re
 
 ## Current sealed baseline
 
-BrickStorm Foundation **0.3.5** is the current clean-package-tested OpenAI release candidate.
+BrickStorm Foundation **0.3.7** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
 
-0.3.5 is the first deliberately authored classic-brick-adventure opening slice. It turns the opening farm into a short consequence chain: stud guidance → readable wrench → staged generator build → wrench repair → powered sensor-cage reveal → first storm-sensor kit. A reactive second storm chaser changes callouts through the sequence. The build also adds original gameplay audio, short authored camera reveals, a compact level-progress HUD, explicit idle/start/run/pivot/air/land character poses, and a stylized non-brick Oklahoma backdrop that keeps bright brick interactables conspicuous.
+0.3.7 preserves the accepted opening and expands north into the first county-road chase. It also improves the molded-minifigure silhouette, separates pelvis/torso presentation, offsets arm cadence from the legs, and proves the generalized `InteractionGraph` on the new road-beacon/barrier chain without replacing the known-good generator/cage opening.
 
-Exact-package verification for 0.3.5 completed with:
+Exact-package verification for 0.3.7 includes:
 
-- 72 tagged GDScripts
-- 40 authored scene/resource files
-- 55/55 behavior contracts
-- real Godot 4.7.2 import/runtime/content/character-feel/currency/opening-slice/soak gates
-- graphical touch tests at 1280x720, 1920x1080, and 2400x1080
-- 301/301 manifest entries unchanged after clean-package source validation and Godot testing
+- source manifest: 341/341 entries;
+- 59/59 behavior contracts;
+- real Godot 4.7.2 import/runtime/core/lifecycle/content/character/stud/opening/road-chase gates;
+- 600-frame soak;
+- graphical touch tests at 1280x720, 1920x1080, and 2400x1080;
+- full clean-extracted source and engine re-test of the exact sealed ZIP.
 
-Archive SHA-256: `457bc04a797ca90b2572da85c6cc834c112ffc968500cfa662f9a58af4f0ec0a`
+Archive SHA-256: `3d8556d19caa0e75dd7fb76388025403b0c93c68924611674d3e7f4534a75dca`
 
-## Protected wins
+## Protected wins / regression floors
 
 - Truck heading control: 5/5
 - Road crossing: 5/5
 - Storm-probe build rhythm: 5/5
+- Generator/sensor-cage opening: reference slice
 
-Do not silently change these while tuning on-foot character feel or expanding authored story gameplay.
+Protected means comparison floor, not museum glass. Improvements are welcome when they clearly preserve or beat the known-good play result.
 
-## Current development focus
+## Current development focus: demo-first movement and environment study
 
-Use the 0.3.5 opening chain as the pacing template for the next content, not as an excuse to remain on the farm forever. Expand toward Twister-specific authored situations such as storm-chaser convoy beats, drive-in destruction, Wakita, larger storm consequences, character-role abilities, and Free Play routes.
+The user-supplied 2008 brick-adventure demo is the primary clean-room reference for the next development cycle.
 
-The environment rule is now explicit: the Oklahoma backdrop may be stylized and non-brick while characters, vehicles, tools, smashables, rebuildables, secrets, and consequence objects form the bright brick gameplay layer. Roblox-like capsule motion or generic block-sandbox composition remains a regression condition.
+Narrow archaeology to two questions:
+
+1. **Character movement/presentation**: how a shared locomotion motor is layered with waist/pelvis lead, torso/shoulder presentation, head behavior, action timing, tool-carry variants, footsteps, pivots, landings, and authored traversal.
+2. **Environment architecture**: how static scenery, render groups, collision proxies, special/gameplay objects, destructible profiles, camera anchors, interaction graphs, navigation, and spectacle budgets remain separate while forming one readable level.
+
+Do not spend time on unrelated demo archaeology unless it materially sharpens one of those two questions.
+
+Movement target from user feedback: stronger shoulder sway and a classic waist-led gait that feels as though the minifigure is being pulled from the beltline, while preserving rigid toy articulation and planted movement.
+
+Environment target from user feedback: **permanent world shell + LEGO attachment layer**. Ordinary building wall mass can be non-LEGO, while roofs, windows, doors, signs, selected trim/porch/utility pieces, interactables, and hero destruction elements form the LEGO-active layer. This is a BrickStorm art decision supported by the demo's separation of static scenery, special objects, collision, and destruction systems; do not misrepresent it as a literal recovered reference-game rule.
+
+See `docs/DEMO_MOVEMENT_ENVIRONMENT_FOCUS.md`, `docs/LEVEL_BUILDING_CONSTRUCTION_STRATEGY.md`, `docs/STATIC_RENDER_CLUSTER_STRATEGY.md`, and the clean-room archaeology notes.
 
 Canonical physical stud currency remains silver 10, gold 100, blue 1,000, purple 10,000.
 
 ## Repository completeness
 
-This GitHub branch is still a curated workstream mirror, not yet a byte-for-byte mirror of the entire packaged 0.3.5 source tree. Do not claim otherwise. The sealed ZIP and its 301-entry manifest remain the authoritative complete release snapshot until full repository migration is explicitly completed and verified.
+The GitHub branch is a curated implementation/history mirror. The sealed 0.3.7 ZIP and its 341-entry manifest remain the byte-authoritative complete source snapshot unless a full repository mirror is separately verified.
 
 ## Release discipline
 
-A candidate is not considered sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and its manifest hashes remain unchanged after those tests. The physical phone is an acceptance device for Android rendering, audio, and subjective game feel, not the compiler.
+A candidate is not considered sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and its manifest hashes remain unchanged after those tests. The physical phone remains the acceptance device for Android rendering, audio, performance, and subjective game feel, not the compiler.
