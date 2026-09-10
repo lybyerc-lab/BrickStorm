@@ -8,65 +8,101 @@ This branch is owned by the ChatGPT/OpenAI implementation of BrickStorm.
 - Construction feature branch: `openai/construction-library`
 - Do not commit Claude or other independent implementations to these branches.
 - Do not merge this branch into `main` without explicit project-owner approval.
-- Treat `main` as a neutral coordination point while independent versions coexist.
+- Treat `main` as neutral coordination territory while independent implementations coexist.
 
 ## Creative identity
 
-The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Read `PROJECT_MEMORY.md`, `docs/NORTH_STAR.md`, and `docs/NO_DRIFT_POLICY.md` before substantial design or implementation work.
+The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Read `PROJECT_MEMORY.md`, `docs/NORTH_STAR.md`, `docs/NO_DRIFT_POLICY.md`, and `docs/DEMO_PARITY_GATE.md` before substantial design or implementation work.
 
 ## Current sealed baseline
 
-BrickStorm Foundation **0.3.8** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
+BrickStorm Foundation **0.4.1** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
 
-0.3.8 preserves the accepted opening and 0.3.7 county-road chase while converting the focused reference-demo study into two production grammars: a waist-led minifigure presentation hierarchy and hybrid Oklahoma buildings with permanent world shells plus independently storm-active LEGO attachments.
+Sealed archive: `brickstorm_foundation_v0_4_1.zip`
 
-Exact-package verification for 0.3.8 includes:
+SHA-256: `f01491d61138a8ec95d65b5968dafc9a5472c0665609e55e943235dfa77e2e69`
 
-- source manifest: 354/354 entries, verified before and after clean-extracted testing;
-- 61/61 behavior contracts;
-- real Godot 4.7.2 import/runtime/core/lifecycle/content/character/hybrid-building/stud/opening/road-chase gates;
-- 600-frame soak;
-- graphical touch tests at 1280x720, 1920x1080, and 2400x1080;
-- full clean-extracted source and engine re-test of the exact sealed ZIP.
+Exact-package verification includes:
 
-Archive SHA-256: `9315994ea869ae30ab41f22ffecc179205603d4abe8ba2f6c81b88f441367e63`
+- source manifest: **388/388** entries unchanged before and after clean-extracted testing;
+- source/static release gate;
+- **70/70** behavior contracts;
+- strict-parser negative tests: **10/10**;
+- real Godot `4.7.2.stable.official.ed1daf0bf` import/runtime/core/lifecycle/content gates;
+- character LEGO-feel + minifigure-silhouette gate;
+- hybrid-building + precision architectural-mating gate;
+- canonical stud identity;
+- authored opening slice;
+- preserved county-road chase;
+- Wakita first-block vertical slice;
+- 600-frame main-scene soak;
+- graphical touch tests at 1280x720, 1920x1080, and 2400x1080.
 
-## Protected wins / regression floors
+The sealed ZIP stored in the LEGO: Twister Library is the byte authority. The GitHub branch remains a curated implementation/history mirror unless a full-repository mirror is separately verified.
 
-- Truck heading control: 5/5
-- Road crossing: 5/5
-- Storm-probe build rhythm: 5/5
-- Generator/sensor-cage opening: reference slice
-- 0.3.7 road-chase / first production InteractionGraph chain: known-good content baseline
+## Demo parity is now mandatory
 
-Protected means comparison floor, not museum glass. Improvements are welcome when they clearly preserve or beat the known-good play result.
+The user-supplied 2008 classic brick-adventure demo is the **5/5 measurement stick**. A pass is not accepted merely because it improves on the previous BrickStorm build or because automated engine tests are green.
 
-## Current production focus: buildings and levels
+Every meaningful pass must report separately:
 
-The demo-first movement/environment pass has now produced a playable implementation rather than remaining research.
+1. visual parity /5 versus the demo;
+2. gameplay parity /5 versus the demo;
+3. strongest improvement;
+4. biggest remaining visual giveaway;
+5. biggest remaining gameplay giveaway;
+6. protected regressions checked;
+7. explicit verdict: ACCEPT, ACCEPT AS FOUNDATION ONLY, or REWORK BEFORE EXPANSION.
 
-Character presentation rule:
+Current 0.4.1 demo-parity classification:
+
+- overall visual: approximately **3.4/5**;
+- minifigure silhouette: approximately **3.6/5**, up from 2.0/5 in 0.4.0;
+- door/window/roof fit: approximately **4.2/5**, up from 2.0/5;
+- overall gameplay: approximately **3.0/5**, intentionally unchanged by the visual correction pass;
+- verdict: **ACCEPT AS FOUNDATION ONLY**.
+
+The remaining visual gap is primarily authored model/material/surface richness and production-level environmental detail. The remaining gameplay gap is semantic feedback density, contextual character/companion roles, alternate solutions, and Story/Free Play depth.
+
+## 0.4.1 correction contracts
+
+### Character
+
+Keep one authoritative on-foot motor. Visible presentation remains:
 
 `travel/root -> pelvis/waist lead -> restrained torso follow -> broader delayed shoulder sway -> rigid arms -> head settle`
 
-Keep the accepted locomotion motor authoritative and continue subjective tuning from the phone rather than fragmenting movement into character-specific controllers.
+0.4.1 hardens the center-screen silhouette with a compact minifigure-style head/torso/hip/leg/foot relationship, broad hip bridge, shorter block legs, deeper feet, permanently bent molded arm construction, bridged C-grip hands, and stronger molded-plastic response.
 
-Building rule:
+### Buildings
 
-**permanent world shell + LEGO attachment layer**.
+Building grammar remains **permanent world shell + LEGO attachment layer**.
 
-Ordinary building wall/foundation/gable mass can remain stylized non-LEGO static world geometry. Roofs, windows, doors, signs, selected trim/porch/utility pieces, interactables, secrets, and hero destruction elements form the LEGO-active layer. Tornado destruction promotes only authored attachments/clusters into physics as needed.
+0.4.1 replaces independent hand-tuned hole/socket offsets with one shared mating specification. Wall openings, socket planes, window/door frames, facade attachment plane, roof overhang, eave height, and ridge convergence derive from the same measurements. Engine tests measure fit tolerances; socket existence alone is no longer sufficient.
 
-The next major content step is to turn the proven `HybridRoadsideHouse` pattern into reusable Oklahoma building kits and begin actual Wakita/level production. Use modular authoring and static clustering for inert scenery, but never cluster away gameplay or tornado identity.
+## Protected wins / regression floors
 
-See `docs/BUILD_CANDIDATE_0_3_8.md`, `docs/FOUNDATION_HARDENING_0_3_8.md`, `docs/DEMO_MOVEMENT_ENVIRONMENT_FOCUS.md`, `docs/LEVEL_BUILDING_CONSTRUCTION_STRATEGY.md`, and `docs/STATIC_RENDER_CLUSTER_STRATEGY.md`.
+- Truck heading control: **5/5**
+- Road crossing: **5/5**
+- Storm-probe build rhythm: **5/5**
+- Generator/sensor-cage opening: protected reference slice
+- County-road / production InteractionGraph chase: protected
+- Wakita objective/checkpoint/camera/tornado-route ownership: protected
+- Canonical stud denomination identity and mobile destruction budgets: protected
 
-Canonical physical stud currency remains silver 10, gold 100, blue 1,000, purple 10,000.
+Protected means comparison floor, not museum glass. Improvements are welcome only when the play result clearly remains equal or better.
 
-## Repository completeness
+## Next production pressure
 
-The GitHub branch is a curated implementation/history mirror. The sealed 0.3.8 ZIP and its 354-entry manifest are the byte-authoritative complete source snapshot unless a full repository mirror is separately verified.
+Do not expand Wakita acreage merely to show progress. The next pass should improve the things that still make BrickStorm easy to distinguish from the demo:
+
+- authored model/material/surface richness;
+- finer minifigure molding/presentation polish at gameplay distance;
+- contextual animation and semantic audio density;
+- character-role and companion behavior;
+- alternate solutions and Free Play/replay hooks;
+- interactions per minute and authored LEGO-game comedy.
 
 ## Release discipline
 
-A candidate is not considered sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and its manifest hashes remain unchanged after those tests. The physical phone remains the acceptance device for Android rendering, audio, performance, and subjective game feel, not the compiler.
+A candidate is not sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and its source-manifest hashes remain unchanged after those tests. Physical Android remains the subjective acceptance device for rendering, performance, audio, thermals, thumb feel, character motion, and final gameplay presentation.
