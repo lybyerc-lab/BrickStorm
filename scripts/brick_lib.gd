@@ -431,15 +431,16 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# generic blocky avatar has, and it reads as one.
 	# Two sections, not three, and a gentle taper. Three made visible steps and
 	# the torso read as a stack of slabs rather than one flaring part.
-	var sections := [
-		[0.62, 1.00, 0.31],     # body    - height fraction, width fraction, y centre
-		[0.40, 0.90, 0.80],     # shoulders, cut back
-	]
-	for sec in sections:
-		var seg := brick_visual(2, 1, torso_h * float(sec[0]), shirt, false)
-		seg.position = Vector3(0, hip_y + torso_h * float(sec[2]), 0)
-		seg.scale = Vector3(float(sec[1]), 1.0, torso_d / STUD)
-		root.add_child(seg)
+	# ONE tapered part with its artwork printed on the front - see
+	# BS:BUILD:TORSO. It used to be two stacked boxes, which left a visible
+	# step across the chest and had nowhere to print.
+	var torso := MeshInstance3D.new()
+	torso.mesh = torso_mesh()
+	torso.scale = Vector3(torso_w, torso_h, torso_d * 2.0)
+	torso.position = Vector3(0, hip_y + torso_h * 0.5, 0)
+	torso.name = "Torso"
+	torso.material_override = torso_material(shirt, C_BROWN, C_TAN)
+	root.add_child(torso)
 
 	# The neck bracket, visible under the chin on the real part.
 	# The neck is a peg the head sits ON, and on the real part you barely see
@@ -729,3 +730,251 @@ static func face_material(skin: Color) -> ShaderMaterial:
 	_mats[key] = m
 	return m
 # [BS:BUILD:FACE:END]
+
+
+# ============================================================================
+# [BS:BUILD:TORSO]
+# Purpose: The torso - one tapered part, with its printing.
+# Invariants:
+# - ONE PART, NOT A STACK. Two boxes stacked to fake a taper leave a visible
+#   step across the chest. The real part is a single trapezoid: full width at
+#   the waist, cut back at the shoulders.
+# - PRINTS ARE INK-LINE ARTWORK. Every LEGO torso print is bold black outlines
+#   with flat fills inside - no shading, no gradients. The demo's Indy is a
+#   jacket, a shirt V, a satchel strap and pocket seams, all drawn in heavy
+#   line. Soft airbrushed detail reads as a video-game texture; line art reads
+#   as a printed part.
+# - PRINTED ON THE FRONT FACE ONLY, selected by the local normal in the
+#   shader. The back and sides are plain plastic, exactly like the real part.
+# - Laid out in real minifig millimetres, like the face.
+# ============================================================================
+const TORSO_W_MM := 16.0
+const TORSO_H_MM := 15.4
+const TORSO_TEX := 256
+
+static var _torso_mesh: ArrayMesh = null
+
+
+static func torso_mesh() -> ArrayMesh:
+	if _torso_mesh != null:
+		return _torso_mesh
+	var c := 0.06
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Rings: waist (full width) up to shoulders (cut back), with a chamfer at
+	# each end so the part reads as moulded like every other brick.
+	var rings := [
+		[-0.5, 1.00, 0.90],
+		[-0.5 + c, 1.00, 1.00],
+		[0.10, 0.97, 1.00],
+		[0.5 - c, 0.88, 1.00],
+		[0.5, 0.88, 0.90],
+	]
+	for ri in range(rings.size() - 1):
+		_torso_band(st, rings[ri], rings[ri + 1])
+	# Caps.
+	for top in [false, true]:
+		var rr: Array = rings[-1] if top else rings[0]
+		var y: float = rr[0]
+		var hw: float = rr[1] * 0.5
+		var hd: float = rr[2] * 0.25
+		var n := Vector3(0, 1.0 if top else -1.0, 0)
+		var q := [Vector3(-hw, y, -hd), Vector3(hw, y, -hd),
+				  Vector3(hw, y, hd), Vector3(-hw, y, hd)]
+		_emit_tri(st, q[0], q[1], q[2], Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, n, n, n)
+		_emit_tri(st, q[0], q[2], q[3], Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, n, n, n)
+	# NO generate_tangents() here. This mesh carries no real UVs - the print is
+	# addressed from local position in the shader - and asking SurfaceTool to
+	# derive tangents from degenerate all-zero UVs corrupts the normals it was
+	# given, which killed the front-face test and left the torso unprinted.
+	# There is no normal map on this part, so there is nothing to want tangents
+	# for either.
+	_torso_mesh = st.commit()
+	return _torso_mesh
+
+
+static func _torso_band(st: SurfaceTool, r0: Array, r1: Array) -> void:
+	var a := _torso_profile(r0)
+	var b := _torso_profile(r1)
+	for i in range(a.size()):
+		var j := (i + 1) % a.size()
+		var p0: Vector3 = a[i][0]
+		var p1: Vector3 = a[j][0]
+		var p2: Vector3 = b[j][0]
+		var p3: Vector3 = b[i][0]
+		var n0: Vector3 = a[i][1]
+		var n1: Vector3 = a[j][1]
+		_emit_tri(st, p0, p1, p2, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, n0, n1, n1)
+		_emit_tri(st, p0, p2, p3, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, n0, n1, n0)
+
+
+# The cross-section is a ROUNDED RECTANGLE with exact per-vertex normals, not a
+# superellipse. A rounded blob's front normal only points at +Z along a narrow
+# central strip, so the shader's front-face test passed on a sliver and the
+# print showed as a band at the collar. A real torso is a flat-fronted part
+# with cut corners, and a flat front is what a print needs.
+static func _torso_profile(r: Array) -> Array:
+	var y: float = r[0]
+	var hw: float = float(r[1]) * 0.5
+	var hd: float = float(r[2]) * 0.25
+	var rc: float = minf(hw, hd) * 0.42          # corner radius
+	var out: Array = []
+	var faces := [
+		[Vector3(0, 0, 1), Vector2(-1, 1), Vector2(1, 1)],      # front
+		[Vector3(1, 0, 0), Vector2(1, 1), Vector2(1, -1)],      # right
+		[Vector3(0, 0, -1), Vector2(1, -1), Vector2(-1, -1)],   # back
+		[Vector3(-1, 0, 0), Vector2(-1, -1), Vector2(-1, 1)],   # left
+	]
+	for fi in range(4):
+		var n: Vector3 = faces[fi][0]
+		var c0: Vector2 = faces[fi][1]
+		var c1: Vector2 = faces[fi][2]
+		# The flat run of this face, inset by the corner radius at each end.
+		var p_a := Vector3(c0.x * hw, y, c0.y * hd) - Vector3(sign(c0.x) * rc, 0, 0) * absf(n.z) \
+			- Vector3(0, 0, sign(c0.y) * rc) * absf(n.x)
+		var p_b := Vector3(c1.x * hw, y, c1.y * hd) - Vector3(sign(c1.x) * rc, 0, 0) * absf(n.z) \
+			- Vector3(0, 0, sign(c1.y) * rc) * absf(n.x)
+		out.append([p_a, n])
+		out.append([p_b, n])
+		# Corner arc into the next face.
+		var nn: Vector3 = faces[(fi + 1) % 4][0]
+		var cx: float = c1.x * (hw - rc)
+		var cz: float = c1.y * (hd - rc)
+		for k in range(1, 3):
+			var t := float(k) / 3.0
+			var dir := n.lerp(nn, t).normalized()
+			out.append([Vector3(cx + dir.x * rc, y, cz + dir.z * rc), dir])
+	return out
+
+
+static func torso_texture(shirt: Color, strap: Color, under: Color) -> ImageTexture:
+	var key := "torso_%d_%d" % [shirt.to_rgba32(), strap.to_rgba32()]
+	if _mats.has(key):
+		return _mats[key]
+	var n := TORSO_TEX
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(shirt)
+	var ppm := float(n) / TORSO_W_MM          # pixels per millimetre
+	var ink := C_BLACK
+	# The jacket has to separate clearly from the shirt or the whole print
+	# collapses into one flat colour at any distance.
+	var jacket := shirt.darkened(0.45)
+
+	# Jacket panels either side of the opening.
+	_tpoly(img, [[0.4, 0.0], [5.6, 0.0], [7.3, 7.2], [6.9, 15.4], [0.4, 15.4]], ppm, jacket)
+	_tpoly(img, [[15.6, 0.0], [10.4, 0.0], [8.7, 7.2], [9.1, 15.4], [15.6, 15.4]], ppm, jacket)
+
+	# The shirt showing through a wide V, with lapels outlined over it.
+	_tpoly(img, [[5.6, 0.0], [10.4, 0.0], [8.7, 7.4], [7.3, 7.4]], ppm, under)
+	_tline(img, [[5.6, 0.0], [7.3, 7.4]], ppm, 0.34, ink)
+	_tline(img, [[10.4, 0.0], [8.7, 7.4]], ppm, 0.34, ink)
+	# Lapel folds - the line that says "collar" rather than "hole".
+	_tline(img, [[4.3, 0.0], [7.0, 4.4]], ppm, 0.34, ink)
+	_tline(img, [[11.7, 0.0], [9.0, 4.4]], ppm, 0.34, ink)
+	# Shirt placket and buttons, below the V where the strap does not cover.
+	_tline(img, [[8.0, 7.4], [8.0, 13.4]], ppm, 0.26, ink)
+	for i in range(3):
+		_tdisc(img, 8.0, 8.6 + float(i) * 1.9, 0.34, ppm, ink)
+	# Jacket hem seams.
+	_tline(img, [[6.9, 7.4], [6.9, 15.4]], ppm, 0.26, ink)
+	_tline(img, [[9.1, 7.4], [9.1, 15.4]], ppm, 0.26, ink)
+
+	# The strap, drawn as a band with an outline on each edge - the single most
+	# recognisable thing on the demo's Indy.
+	_tband(img, [4.0, 0.0], [12.4, 15.4], 2.1, ppm, strap, ink)
+
+	# Chest pockets with flaps.
+	for px in [2.2, 11.3]:
+		_trect(img, px, 8.4, 2.6, 3.0, ppm, jacket.lightened(0.10), ink)
+		_trect(img, px - 0.2, 7.7, 3.0, 0.9, ppm, jacket.lightened(0.18), ink)
+
+	# Belt.
+	_trect(img, 0.4, 13.6, 15.2, 1.5, ppm, jacket.darkened(0.30), ink)
+	_trect(img, 6.9, 13.5, 2.2, 1.7, ppm, C_TAN, ink)
+
+	var tex := ImageTexture.create_from_image(img)
+	_mats[key] = tex
+	return tex
+
+
+static func _tpx(img: Image, x: int, y: int, c: Color) -> void:
+	if x >= 0 and y >= 0 and x < img.get_width() and y < img.get_height():
+		img.set_pixel(x, y, c)
+
+
+static func _trect(img: Image, x: float, y: float, w: float, h: float,
+		ppm: float, fill: Color, ink: Color) -> void:
+	var x0 := int(x * ppm)
+	var y0 := int(y * ppm)
+	var x1 := int((x + w) * ppm)
+	var y1 := int((y + h) * ppm)
+	var t := int(maxf(0.28 * ppm, 1.0))
+	for yy in range(y0, y1):
+		for xx in range(x0, x1):
+			var edge: bool = xx < x0 + t or xx >= x1 - t or yy < y0 + t or yy >= y1 - t
+			_tpx(img, xx, yy, ink if edge else fill)
+
+
+static func _tdisc(img: Image, x: float, y: float, r: float, ppm: float, c: Color) -> void:
+	var rr := int(r * ppm)
+	for dy in range(-rr, rr + 1):
+		for dx in range(-rr, rr + 1):
+			if dx * dx + dy * dy <= rr * rr:
+				_tpx(img, int(x * ppm) + dx, int(y * ppm) + dy, c)
+
+
+static func _tline(img: Image, pts: Array, ppm: float, w: float, c: Color) -> void:
+	var a := Vector2(float(pts[0][0]), float(pts[0][1])) * ppm
+	var b := Vector2(float(pts[1][0]), float(pts[1][1])) * ppm
+	var steps := int(maxf(a.distance_to(b), 1.0))
+	var rr := int(maxf(w * ppm * 0.5, 1.0))
+	for i in range(steps + 1):
+		var p := a.lerp(b, float(i) / float(steps))
+		for dy in range(-rr, rr + 1):
+			for dx in range(-rr, rr + 1):
+				if dx * dx + dy * dy <= rr * rr:
+					_tpx(img, int(p.x) + dx, int(p.y) + dy, c)
+
+
+static func _tband(img: Image, a: Array, b: Array, w: float, ppm: float,
+		fill: Color, ink: Color) -> void:
+	_tline(img, [a, b], ppm, w + 0.55, ink)
+	_tline(img, [a, b], ppm, w, fill)
+
+
+static func _tpoly(img: Image, pts: Array, ppm: float, c: Color) -> void:
+	var ys: Array = []
+	for p in pts:
+		ys.append(float(p[1]) * ppm)
+	var y0 := int(ys.min())
+	var y1 := int(ys.max())
+	for y in range(y0, y1 + 1):
+		var xs: Array = []
+		for i in range(pts.size()):
+			var p1 := Vector2(float(pts[i][0]), float(pts[i][1])) * ppm
+			var p2 := Vector2(float(pts[(i + 1) % pts.size()][0]),
+				float(pts[(i + 1) % pts.size()][1])) * ppm
+			if (p1.y <= float(y) and p2.y > float(y)) or (p2.y <= float(y) and p1.y > float(y)):
+				xs.append(p1.x + (float(y) - p1.y) / (p2.y - p1.y) * (p2.x - p1.x))
+		xs.sort()
+		var i2 := 0
+		while i2 + 1 < xs.size():
+			for x in range(int(xs[i2]), int(xs[i2 + 1]) + 1):
+				_tpx(img, x, y, c)
+			i2 += 2
+
+
+static func torso_material(shirt: Color, strap: Color, under: Color) -> ShaderMaterial:
+	var key := "torsomat_%d_%d" % [shirt.to_rgba32(), strap.to_rgba32()]
+	if _mats.has(key):
+		return _mats[key]
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/torso.gdshader")
+	m.set_shader_parameter("print_tex", torso_texture(shirt, strap, under))
+	m.set_shader_parameter("base_color", shirt)
+	m.set_shader_parameter("p_roughness", PLASTIC_ROUGHNESS)
+	m.set_shader_parameter("p_specular", PLASTIC_SPECULAR)
+	m.set_shader_parameter("p_rim", PLASTIC_RIM * 0.5)
+	_mats[key] = m
+	return m
+# [BS:BUILD:TORSO:END]

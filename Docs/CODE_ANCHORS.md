@@ -140,6 +140,8 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 
 - `[BS:RENDER:FACE]` — `shaders/face.gdshader` — the face wrap computed from position, and why it is not authored on the mesh
 - `[BS:RENDER:BASEPLATE]` — `shaders/baseplate.gdshader` — the ground is a baseplate, and why its studs are shaded rather than modelled
+- `[BS:BUILD:TORSO]` — `scripts/brick_lib.gd` — one tapered torso part, and why its print is ink-line artwork
+- `[BS:RENDER:TORSO]` — `shaders/torso.gdshader` — printing the front face, selected by the local normal
 - `[BS:BUILD:FACE]` — `scripts/brick_lib.gd` — the face is printed, not modelled, and why brows carry it
 - `[BS:BUILD:CHAMFER]` — `scripts/brick_lib.gd` — the chamfered brick, and why a bare BoxMesh read as generic blocks
 - `[BS:RENDER:WIND]` — `shaders/brick_common.gdshaderinc` — the vertex wind, and why its storm must be the same storm the physics uses

@@ -644,3 +644,57 @@ variance on head clipping is around ten percentage points.
 So: the move from 97% to under 10% is real and far outside the noise. The
 difference between 0% and 10% is not, and the last few calibration passes were
 fitting noise. Recorded rather than presented as precision.
+
+---
+
+## 2026-09-10 — Torso printing
+
+The torso was flat colour where the demo's Indy carries a jacket, a shirt V, a
+satchel strap and pocket seams. Two changes.
+
+**One part, not a stack.** It was two boxes stacked to fake a taper, which left
+a visible step across the chest and had nowhere to print. It is now a single
+tapered part - full width at the waist, cut back at the shoulders - with a
+rounded-rectangle cross-section carrying exact per-face normals.
+
+**The print is ink-line artwork.** Every LEGO torso print is bold black
+outlines with flat fills - no shading, no gradients. Looking closely at the
+demo's Indy: heavy linework defining a jacket, a V of shirt showing through,
+lapel folds, and a strap drawn as a band with an outline on each edge. Soft
+airbrushed detail reads as a video-game texture; line art reads as a printed
+part. Ours is laid out in real minifig millimetres like the face.
+
+### Three bugs, and one that is only worked around
+
+1. **`generate_tangents()` on a mesh with no real UVs corrupted its normals.**
+   This mesh addresses its print from local position, so every UV is zero, and
+   asking SurfaceTool to derive tangents from degenerate UVs destroyed the
+   normals it had been given. Removed - there is no normal map here to want
+   tangents for.
+2. **`NORMAL` in `vertex()` never reached the varying** under the compatibility
+   renderer. The mesh's normals were dumped and confirmed correct, yet the
+   front-face test read zero everywhere while `u` and `v` derived from
+   `VERTEX` in the same function were exact. Front-ness is now taken from
+   position instead.
+3. **The visible surface reports `v_local.z = -0.25`** - the camera sees the
+   FAR face. Measured, not assumed. That strongly suggests these generated
+   meshes are wound inside-out, and that the head's empirically-determined face
+   offset has been quietly compensating for the same thing.
+
+   **This is not fixed.** The print is applied to whichever flat +/-Z face is
+   being looked at, with `u` mirrored so the asymmetric strap reads correctly
+   from either side. That makes the part correct without pretending the
+   winding question is answered, and it is recorded here so the next person
+   does not conclude the meshes are sound.
+
+The method that found all three was the same one that cracked the face wrap:
+render a diagnostic that outputs the intermediate values as colour and read the
+pixels. Reasoning about the camera basis was wrong twice; the pixel dump was
+right immediately.
+
+### Not done
+
+- The jacket reads much darker than the arms, which still use the flat shirt
+  colour. They should be the jacket colour, or the jacket lightened.
+- The hair still bands across the forehead.
+- Buildings remain rectangular boxes.
