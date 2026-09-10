@@ -19,6 +19,21 @@ extends Resource
 @export var stride_phase_rate: float = 1.88
 @export var footstep_phase_step: float = PI
 
+@export_category("Waist-Led Presentation")
+# Clean-room demo study points to a shared motor with richer authored action
+# presentation. These values keep the controller untouched while letting the
+# visible toy read as hip-driven instead of chest-driven.
+@export var arm_phase_lag: float = 0.38
+@export var hip_phase_lead: float = 0.10
+@export var shoulder_phase_lag: float = 0.50
+@export var hip_yaw_sway: float = 0.105
+@export var hip_roll_sway: float = 0.026
+@export var torso_follow_yaw: float = 0.040
+@export var torso_roll_sway: float = 0.022
+@export var shoulder_yaw_sway: float = 0.105
+@export var shoulder_roll_sway: float = 0.085
+@export var head_settle_yaw: float = 0.036
+
 @export_category("Semantic Events")
 @export var footstep_event_id: StringName = &"footstep"
 @export var landing_event_id: StringName = &"land"
