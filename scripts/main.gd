@@ -93,6 +93,23 @@ const MAX_TRAIL := 340.0
 # the streamed corridor either side of them: STREAM_AHEAD forward and
 # STREAM_BEHIND back, with margin. --selftest asserts the coverage.
 const GROUND_SPAN := 520.0
+# Vertices per side, so one quad is about 4m. Fine enough for a 164m wavelength
+# and coarse enough to stay a rounding error on a phone's vertex budget.
+const GROUND_SUBDIV := 128
+# The collision heightmap. A HeightMapShape3D's cells are 1 unit, so the SHAPE
+# NODE is scaled to make them HEIGHTMAP_CELL metres and the stored heights are
+# divided by the same factor. 261 points at 1m was 68k Terrain.height calls per
+# map and 136k per rebuild: --selftest went from 40 seconds to a hang, and in
+# play it would be a visible hitch every 24 metres travelled. 129 points at 2m
+# covers the same 256m for a quarter of the samples, and 2m resolution against
+# a 121m shortest wavelength is sixty samples a wave.
+const HEIGHTMAP_N := 129
+const HEIGHTMAP_CELL := 2.0
+# How far the anchor may drift before the map is resampled. A quarter of the
+# span, so a rebuild is rare and never visible.
+const HEIGHTMAP_STEP := 24.0
+# The safety floor, below the terrain's deepest point.
+const HEIGHTMAP_FLOOR := -40.0
 const CORRIDOR_HALF_WIDTH := 46.0
 # How far apart the hand-composed scenes sit, and how much corridor each one
 # reserves. Before this there was exactly ONE authored area in the game and it
@@ -132,6 +149,10 @@ var _scene_i: int = 0      # scenes actually dressed (drives which one is next)
 # by however much the storm has already left behind.
 var _torn_ever: int = 0
 var _ground_mi: MeshInstance3D = null
+var _ground_cs: CollisionShape3D = null     # under the player
+var _storm_cs: CollisionShape3D = null      # under the funnel and its debris
+var _heightmap_at := Vector2(1.0e9, 1.0e9)
+var _storm_map_at := Vector2(1.0e9, 1.0e9)
 # How far apart the authored scenes go. A var rather than the constant so a
 # measurement run can turn them off with --noscenes and compare both arms from
 # ONE build, instead of editing a constant between the two sets and hoping
@@ -259,14 +280,43 @@ func _setup_environment() -> void:
 #   from the air, and so no large dead empty zone fills the frame.
 # ============================================================================
 func _build_ground() -> void:
+	# THE COLLIDER FOLLOWS THE TERRAIN, not a flat plane at zero. It was a
+	# WorldBoundaryShape3D - an infinite horizontal plane - which is correct
+	# only while the ground is flat. With the mesh displaced, that plane would
+	# have left the player walking at y=0 across a field that rises five metres
+	# and drops four: the world you see would not be the world you stand on.
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
 	body.collision_mask = 0
-	var cs := CollisionShape3D.new()
-	var wb := WorldBoundaryShape3D.new()
-	cs.shape = wb
-	body.add_child(cs)
+	# TWO maps, one on the player and one on the storm. A single map centred
+	# between them covers both only while they are close: put the storm 400m
+	# away, as the jump test does and as a lagging player really can, and the
+	# midpoint anchor leaves the PLAYER outside the map entirely - they fell
+	# eleven metres through the world. The player must never fall through, and
+	# the funnel's debris is the visual centrepiece, so both get ground. The
+	# two maps sample the same Terrain.height, so where they overlap the
+	# surfaces coincide exactly and there is nothing for physics to fight over.
+	_ground_cs = _make_heightmap(body)
+	_storm_cs = _make_heightmap(body)
 	add_child(body)
+
+	# A floor well under the lowest ground, as a net. The heightmap only covers
+	# the neighbourhood of the action, and debris thrown past its edge has to
+	# land on something rather than fall for ever.
+	var net := StaticBody3D.new()
+	net.collision_layer = 1
+	net.collision_mask = 0
+	var ncs := CollisionShape3D.new()
+	var nwb := WorldBoundaryShape3D.new()
+	# Plane(normal, d) sits at distance d ALONG the normal, so a floor below the
+	# world is a NEGATIVE d. Negating it put the net at y = +40, a ceiling the
+	# player then stood on: jump_from read 40.00, the smash hit nothing, and
+	# the truck rolled 75m across a frictionless sheet above the terrain.
+	nwb.plane = Plane(Vector3.UP, HEIGHTMAP_FLOOR)
+	ncs.shape = nwb
+	net.add_child(ncs)
+	add_child(net)
+	_refresh_heightmap(true)
 
 	# The ground is TEXTURED EARTH, not a baseplate. It was a 420m studded
 	# plate on the theory that a world where nothing the bricks stand on is
@@ -288,8 +338,11 @@ func _build_ground() -> void:
 	# tools/edge_probe.gd, which is the render that found this.
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(GROUND_SPAN, GROUND_SPAN)
-	pm.subdivide_width = 4
-	pm.subdivide_depth = 4
+	# Enough vertices for the displacement to read as land. At subdivide 4 the
+	# mesh had 5 verts a side over 520m - a 130m triangle cannot carry a 164m
+	# wavelength, so the hills would simply not appear.
+	pm.subdivide_width = GROUND_SUBDIV
+	pm.subdivide_depth = GROUND_SUBDIV
 	_ground_mi = MeshInstance3D.new()
 	_ground_mi.mesh = pm
 	var gm := ShaderMaterial.new()
@@ -307,6 +360,69 @@ func _build_ground() -> void:
 	# is world-locked and therefore has no edge to run off.
 
 
+# Resample the collision heightmap around the action. Sampled from
+# Terrain.height, which is the same function the ground shader displaces the
+# mesh with - see BS:WORLD:TERRAIN and tools/terrain_probe.gd, which gates the
+# two against each other.
+func _make_heightmap(body: StaticBody3D) -> CollisionShape3D:
+	var cs := CollisionShape3D.new()
+	var hm := HeightMapShape3D.new()
+	hm.map_width = HEIGHTMAP_N
+	hm.map_depth = HEIGHTMAP_N
+	cs.shape = hm
+	# Uniform, so the shape is not sheared - only the cell size changes. The
+	# scale multiplies HEIGHT too, which is why the data is pre-divided.
+	cs.scale = Vector3.ONE * HEIGHTMAP_CELL
+	body.add_child(cs)
+	return cs
+
+
+# Resample one collision heightmap around a point. Sampled from Terrain.height,
+# which is the same function the ground shader displaces the mesh with - see
+# BS:WORLD:TERRAIN and tools/terrain_probe.gd, which gates the two against
+# each other.
+func _fill_heightmap(cs: CollisionShape3D, anchor_in: Vector2, at: Vector2,
+		force: bool) -> Vector2:
+	if cs == null:
+		return at
+	if not force and anchor_in.distance_to(at) < HEIGHTMAP_STEP:
+		return at
+	# Snap to the cell lattice so the sampled surface does not shift under a
+	# body between rebuilds.
+	var anchor := Vector2(
+		roundf(anchor_in.x / HEIGHTMAP_CELL) * HEIGHTMAP_CELL,
+		roundf(anchor_in.y / HEIGHTMAP_CELL) * HEIGHTMAP_CELL)
+	var n := HEIGHTMAP_N
+	var half := float(n - 1) * 0.5
+	var data := PackedFloat32Array()
+	data.resize(n * n)
+	var inv := 1.0 / HEIGHTMAP_CELL
+	for iz in range(n):
+		var wz: float = anchor.y + (float(iz) - half) * HEIGHTMAP_CELL
+		var row := iz * n
+		for ix in range(n):
+			var wx: float = anchor.x + (float(ix) - half) * HEIGHTMAP_CELL
+			# Pre-divided: the node's uniform scale multiplies height as well.
+			data[row + ix] = Terrain.height(wx, wz) * inv
+	var hm := cs.shape as HeightMapShape3D
+	hm.map_data = data
+	cs.global_position = Vector3(anchor.x, 0.0, anchor.y)
+	return anchor
+
+
+func _refresh_heightmap(force: bool = false) -> void:
+	# _build_ground runs BEFORE the player and the storm exist, so neither can
+	# be assumed; the first maps sit on the origin and the next streaming pass
+	# moves them.
+	var p_at := Vector2.ZERO
+	var s_at := Vector2.ZERO
+	if player != null:
+		p_at = Vector2(player.global_position.x, player.global_position.z)
+	if tornado != null:
+		s_at = Vector2(tornado.global_position.x, tornado.global_position.z)
+	_heightmap_at = _fill_heightmap(_ground_cs, p_at, _heightmap_at, force)
+	_storm_map_at = _fill_heightmap(_storm_cs, s_at, _storm_map_at, force)
+
 # --------------------------------------------------------------------- world
 # Small convenience: a positioned visual brick.
 # [BS:WORLD:GROUND:END]
@@ -320,7 +436,7 @@ func _add_vehicle(pos: Vector3, colour: Color, yaw: float) -> void:
 	var v := Vehicle.new()
 	v.body_colour = colour
 	add_child(v)
-	v.global_position = pos
+	v.global_position = pos + Vector3(0.0, Terrain.height(pos.x, pos.z), 0.0)
 	v.heading = yaw
 	v.rotation.y = yaw
 	v.rammed.connect(_on_vehicle_ram)
@@ -328,6 +444,12 @@ func _add_vehicle(pos: Vector3, colour: Color, yaw: float) -> void:
 
 
 func _add_structure(st: Structure) -> void:
+	# ON THE GROUND, wherever the ground is. Every structure in the game passes
+	# through here, so this one line is what keeps the town, the set pieces and
+	# the self-test's own targets out of the hillsides. Added rather than
+	# assigned, so a prop deliberately raised above its base keeps that offset.
+	# See BS:WORLD:TERRAIN.
+	st.position.y += Terrain.height(st.position.x, st.position.z)
 	add_child(st)
 	structures.append(st)
 	areamap.adopt(st)
@@ -373,6 +495,62 @@ func _build_town() -> void:
 
 # Design Law #1: cows fly, cows land, cows are never destroyed.
 # [BS:WORLD:LAYOUT:END]
+
+
+# ============================================================================
+# [BS:WORLD:LEVEL_STACK]
+# Purpose: The level's SHAPE - how wide the corridor is where, and which stage
+#   of the level you are in.
+# Invariants:
+# - THE LEVEL IS A CHAIN OF PLACES, NOT A RIBBON. It used to be one 92m-wide
+#   corridor from end to end, and that is what made it read as a treadmill
+#   however much the props varied: a route with no shape is a corridor whatever
+#   is standing in it. Areas alternate ROOM and NECK, and rooms grow stage by
+#   stage, so the world opens out as the round goes on.
+# - THE STORM'S WEAVE IS DERIVED FROM THE WIDTH, never set alongside it. A
+#   narrow section with a wide weave puts the funnel outside the props, which
+#   is measured, not theoretical: composing the authored scenes into the middle
+#   twenty metres cut what a passing funnel could reach to a tenth, and the
+#   destruction went with it.
+# - WIDTH CHANGES AT AREA BOUNDARIES, but the storm's weave is EASED toward the
+#   new width rather than snapped. A funnel that jumps sideways at a boundary
+#   reads as a glitch; TT solve the same problem for cameras with a range of
+#   effect (see Docs/TT_ENGINE_NOTES.md section 3).
+# - The camera pulls back in the wide sections. That is what makes "the playing
+#   area expanded" something the player sees rather than something the layout
+#   knows.
+# ============================================================================
+# Areas per stage. Four is two rooms and two necks - enough that a stage reads
+# as a stretch of level rather than a single beat.
+const STAGE_EVERY := 4
+# The level STARTS TIGHT and opens out. The first attempt set ROOM_HALF to 44
+# against a 46m ceiling, so the rooms "grew" from 44 to 46 and then clamped:
+# a two-metre progression across a whole round, which is flat in everything but
+# arithmetic. The gate below caught it only because it was strengthened to
+# demand a meaningful gap rather than any increase at all.
+const NECK_HALF := 18.0
+const ROOM_HALF := 30.0
+# Metres of half-width added to each room per stage, and the ceiling. The
+# ceiling is CORRIDOR_HALF_WIDTH: the streamer, the scene bounds gate and the
+# reclaim logic are all written against that as the widest the world ever gets.
+const ROOM_GROWTH := 6.0
+# How much of a half-width the funnel's weave is allowed to use. Set so that at
+# ROOM_HALF the drift matches the 22.0 the storm had when the corridor was one
+# fixed width, which keeps the feel of the open sections unchanged.
+const WEAVE_OF_HALF := 0.5
+
+
+# The shape of area `index`: its half-width and its stage.
+static func area_shape(index: int) -> Dictionary:
+	var stage: int = index / STAGE_EVERY
+	# Odd areas are necks. The funnel is close and unavoidable in a neck and
+	# wanders in a room, so the level has a rhythm of pressure and choice.
+	if index % 2 == 1:
+		return {"half_width": NECK_HALF, "stage": stage}
+	var w: float = minf(ROOM_HALF + float(stage) * ROOM_GROWTH,
+		CORRIDOR_HALF_WIDTH)
+	return {"half_width": w, "stage": stage}
+# [BS:WORLD:LEVEL_STACK:END]
 
 
 # ============================================================================
@@ -426,6 +604,7 @@ func _stream_world(delta: float) -> void:
 	if _ground_mi != null:
 		_ground_mi.global_position = Vector3(
 			player.global_position.x, 0.0, player.global_position.z)
+	_refresh_heightmap()
 
 	# RECLAIM BEHIND THE PLAYER, NOT BEHIND THE STORM. This was
 	# funnel_pos().z - STREAM_BEHIND, so the horizon was tied to the funnel
@@ -471,7 +650,12 @@ func _build_scene(a: SubArea) -> void:
 	for p in sc.get("cows", []):
 		var cow := _make_cow()
 		critter_root.add_child(cow)
-		cow.global_position = p + Vector3(0, 0.1, 0)
+		cow.global_position = p + Vector3(0.0, 0.1 + Terrain.height(p.x, p.z), 0.0)
+	# A SET PIECE IS A FULL-WIDTH ROOM, always, whatever stage it lands in.
+	# Arriving at one should feel like the level opening out, and its props are
+	# composed against the widest corridor - see SetPiece._surround.
+	a.half_width = CORRIDOR_HALF_WIDTH
+	a.stage = area_shape(a.index)["stage"]
 	# A composed space reads from further back, like the hog lot.
 	a.cam_back_bias = 4.0
 	a.cam_height_bias = 2.0
@@ -492,10 +676,22 @@ func _populate_area(area: SubArea) -> void:
 	if area.kind == SubArea.Kind.AUTHORED:
 		_authored_populated += 1
 		return
+	# The area's own shape, set here rather than in AreaMap: the map owns where
+	# one area ends and the next begins, not what the level is shaped like.
+	var shape := area_shape(area.index)
+	area.half_width = shape["half_width"]
+	area.stage = shape["stage"]
+	# Wide sections get the camera pulled back so the player SEES the space
+	# open out; a neck keeps it close.
+	var openness: float = (area.half_width - NECK_HALF) / maxf(
+		CORRIDOR_HALF_WIDTH - NECK_HALF, 1.0)
+	area.cam_back_bias = openness * 7.0
+	area.cam_height_bias = openness * 3.0
+
 	var z0 := area.z0
 	var span := area.depth
 	var b := area.index + 1
-	var w := CORRIDOR_HALF_WIDTH
+	var w := area.half_width
 
 	# BLOCK CHARACTER. The landmark used to come from `b % 7`, so a player
 	# travelling 600m saw the same seven buildings in the same order, twice.
@@ -656,7 +852,7 @@ func _build_cows() -> void:
 	for p in [Vector3(-4, 0, 12), Vector3(2, 0, 15), Vector3(-8, 0, 17), Vector3(5, 0, 10)]:
 		var cow := _make_cow()
 		critter_root.add_child(cow)
-		cow.global_position = p
+		cow.global_position = p + Vector3(0.0, Terrain.height(p.x, p.z), 0.0)
 
 
 # -------------------------------------------------------------------- actors
@@ -778,7 +974,7 @@ func _spawn_actors() -> void:
 	add_child(tornado)
 	tornado.corridor_mode = true
 	tornado.move_speed = 3.0
-	tornado.global_position = Vector3(0, 0, -24)
+	tornado.global_position = Vector3(0, Terrain.height(0, -24), -24)
 
 	_roar = audio.attach_loop("roar", tornado, -60.0)
 	if _roar != null:
@@ -790,7 +986,7 @@ func _spawn_actors() -> void:
 	player.name = "Player"
 	player.add_to_group("player")
 	add_child(player)
-	player.global_position = Vector3(-4, 0.2, 0)
+	player.global_position = Vector3(-4, 0.2 + Terrain.height(-4, 0), 0)
 	player.tumbled.connect(_on_player_tumbled)
 
 	# The ambience bed rides with the player and is driven by the sub-area's
@@ -1580,6 +1776,16 @@ func _update_area_state(delta: float) -> void:
 		here.intensity = SubArea.Intensity.QUIET
 	_area_now = here
 
+	# THE STORM TAKES THE WIDTH OF THE SECTION IT IS IN. Read from the area
+	# under the FUNNEL, not the one under the player: the weave has to match
+	# the props the funnel is about to reach, and the player can be a section
+	# behind. See BS:WORLD:LEVEL_STACK.
+	var storm_area := areamap.area_at(fz)
+	if storm_area == null:
+		storm_area = areamap.nearest(fz)
+	if storm_area != null:
+		tornado.corridor_target = storm_area.half_width * WEAVE_OF_HALF
+
 	if _amb == null:
 		return
 	var want: float = AMB_DB[here.intensity]
@@ -1940,7 +2146,7 @@ func _grab(name: String) -> void:
 		# An overview of the authored yard, so its COMPOSITION can be judged
 		# against the procedural blocks - which is the whole point of it.
 		var o: Vector3 = _sp["origin"]
-		tornado.global_position = Vector3(0, 0, -900)
+		tornado.global_position = Vector3(0, Terrain.height(0, -900), -900)
 		player.global_position = o + Vector3(0, 0.2, -6)
 		camera.global_position = o + Vector3(-1, 26, -30)
 		camera.look_at(o + Vector3(0, 1, 8), Vector3.UP)
@@ -2002,7 +2208,7 @@ func _run_selftest() -> void:
 	var ram_target := PropBuilder.barn(Vector3(300, 0, 0))
 	_add_structure(ram_target)
 	var truck: Vehicle = vehicles[0]
-	truck.global_position = Vector3(300, 0.4, -24)
+	truck.global_position = Vector3(300, 0.4 + Terrain.height(300, -24), -24)
 	truck.heading = 0.0
 	player.global_position = truck.global_position
 	_enter_vehicle()
@@ -2059,7 +2265,7 @@ func _run_selftest() -> void:
 	await get_tree().process_frame
 	var smash_target := PropBuilder.silo(Vector3(340, 0, 0))
 	_add_structure(smash_target)
-	player.global_position = Vector3(340, 0.4, -2.2)  # beside a dedicated silo
+	player.global_position = Vector3(340, 0.4 + Terrain.height(340, -2.2), -2.2)  # beside a silo
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	var torn_before_smash := _total_torn()
@@ -2119,9 +2325,9 @@ func _run_selftest() -> void:
 	# --- 3. jump ----------------------------------------------------------
 	# Park the funnel well away first: a lingering tumble from the smash test
 	# would refuse the jump and make this assert order-dependent.
-	tornado.global_position = Vector3(0, 0, -400)
+	tornado.global_position = Vector3(0, Terrain.height(0, -400), -400)
 	player.tumble_timer = 0.0
-	player.global_position = Vector3(0, 0.2, 12)
+	player.global_position = Vector3(0, 0.2 + Terrain.height(0, 12), 12)
 	for i in range(20):
 		await get_tree().physics_frame
 	var y0 := player.global_position.y
@@ -2142,7 +2348,7 @@ func _run_selftest() -> void:
 	var was_demo := demo_mode
 	demo_mode = false
 	_force_input = false
-	player.global_position = Vector3(0, 0.2, 12)
+	player.global_position = Vector3(0, 0.2 + Terrain.height(0, 12), 12)
 	await get_tree().physics_frame
 
 	camera.global_position = player.global_position + Vector3(0, 6, 12)
@@ -2167,8 +2373,8 @@ func _run_selftest() -> void:
 	_camera_locked = false
 
 	# --- 4. the funnel, the economy --------------------------------------
-	tornado.global_position = Vector3(16, 0, -18)
-	player.global_position = Vector3(25, 0.2, -18)
+	tornado.global_position = Vector3(16, Terrain.height(16, -18), -18)
+	player.global_position = Vector3(25, 0.2 + Terrain.height(25, -18), -18)
 	_force_input = false
 	for i in range(700):
 		await get_tree().physics_frame
@@ -2764,6 +2970,119 @@ func _run_selftest() -> void:
 			% str(neck.scale) + " head comes out distorted")
 	rig.queue_free()
 
+	# --- 4b10. the player stands on the ground that is DRAWN --------------
+	# tools/terrain_probe.gd gates the shader's height function against
+	# terrain.gd. This gates the COLLIDER against it, which is the other half:
+	# the mesh could be displaced perfectly and the collision heightmap still
+	# be somewhere else, and the symptom would be a minifig wading through a
+	# hillside or walking on air over a hollow - with nothing in the game
+	# reporting a fault. Drop the player at several places and compare where
+	# they come to rest against what Terrain says the ground is.
+	# See BS:WORLD:TERRAIN.
+	# THE STORM IS NOT MOVED. The first version parked the funnel on the spot
+	# being tested, on the theory that its heightmap should cover the ground
+	# too - which put the player INSIDE the tornado, so they were picked up and
+	# tumbled, _physics_process took its early return, move_and_slide never
+	# ran, and is_on_floor() was never true. The gate reported "there is no
+	# collision under the drawn ground" about ground that was perfectly solid.
+	# The player's own heightmap re-centres on them, so it always covers them.
+	# Not moving the storm also leaves the area map alone, which matters
+	# because the reclaim gate runs after this one.
+	var keep_terr_p := player.global_position
+	var keep_terr_t := tornado.global_position
+	var worst_gap := 0.0
+	var worst_where := Vector2.ZERO
+	for spot in [Vector2(0, 40), Vector2(-30, 120), Vector2(24, -60),
+				 Vector2(-12, 200)]:
+		var gy: float = Terrain.height(spot.x, spot.y)
+		player.global_position = Vector3(spot.x, gy + 3.0, spot.y)
+		_refresh_heightmap(true)
+		for i in range(70):
+			await get_tree().physics_frame
+			if player.is_on_floor():
+				break
+		if not player.is_on_floor():
+			fails.append("the player never landed at (%.0f, %.0f) - there is no"
+				% [spot.x, spot.y] + " collision under the drawn ground there")
+			continue
+		var gap: float = absf(player.global_position.y - gy)
+		if gap > worst_gap:
+			worst_gap = gap
+			worst_where = spot
+	# The capsule's own half-height puts the origin above the surface, so this
+	# is a tolerance on CONSISTENCY, not on zero: what must not happen is the
+	# gap changing from place to place, which is what a collider that does not
+	# follow the terrain looks like.
+	if worst_gap > 2.5:
+		fails.append("the player rests %.2fm off the drawn ground at (%.0f,"
+			% [worst_gap, worst_where.x]
+			+ " %.0f) - the collider is not the terrain" % worst_where.y)
+	player.global_position = keep_terr_p
+	tornado.global_position = keep_terr_t
+	_refresh_heightmap(true)
+
+	# --- 4b11. the level has a SHAPE, and the storm takes it --------------
+	# The corridor was one 92m ribbon end to end, which is what made it read as
+	# a treadmill however much the props varied. Two things have to hold, and
+	# neither is visible in a screenshot:
+	#   the widths have to actually ALTERNATE, or "rooms and necks" is a table
+	#   nothing reads; and the storm's weave has to be DERIVED from the width
+	#   it is in, because a wide weave in a narrow section puts the funnel
+	#   outside the props - which is measured, not theoretical: composing the
+	#   authored scenes into the middle twenty metres cut what the funnel could
+	#   reach to a tenth and took the destruction with it.
+	# See BS:WORLD:LEVEL_STACK.
+	var widths: Array[float] = []
+	for i in range(16):
+		widths.append(float(area_shape(i)["half_width"]))
+	var narrowest: float = widths.min()
+	var widest: float = widths.max()
+	if widest - narrowest < 12.0:
+		fails.append("the corridor only varies by %.0fm across sixteen areas"
+			% (widest - narrowest) + " - that is a ribbon, not a level")
+	if narrowest > NECK_HALF + 0.1 or widest > CORRIDOR_HALF_WIDTH + 0.1:
+		fails.append("area widths run %.0f..%.0f, outside NECK_HALF..%.0f"
+			% [narrowest, widest, CORRIDOR_HALF_WIDTH])
+	# Rooms must GROW: the level opens out as the round goes on.
+	# A MEANINGFUL gap, not merely an increase. This first read `later > first`
+	# and passed on 44m -> 46m, which is a level that does not open out in any
+	# way a player could feel.
+	var first_room: float = float(area_shape(0)["half_width"])
+	var later_room: float = float(area_shape(12)["half_width"])
+	if later_room - first_room < 10.0:
+		fails.append("the first room is %.0fm and a late one %.0fm - a %.0fm"
+			% [first_room, later_room, later_room - first_room]
+			+ " change across a whole round is not the level opening out")
+	# And the weave must follow. Put the funnel in a known narrow area and a
+	# known wide one, and check the target it is handed.
+	var keep_tz := tornado.global_position
+	var stack_map := AreaMap.new()
+	stack_map.depth = 34.0
+	stack_map.ensure_ahead(600.0, func(_a: SubArea) -> void: pass)
+	var seen_narrow := 0.0
+	var seen_wide := 0.0
+	for a in stack_map.areas:
+		var sh := area_shape(a.index)
+		a.half_width = sh["half_width"]
+		if a.half_width <= NECK_HALF + 0.1:
+			seen_narrow = a.half_width * WEAVE_OF_HALF
+		if a.half_width >= ROOM_HALF - 0.1:
+			seen_wide = a.half_width * WEAVE_OF_HALF
+	if seen_narrow <= 0.0 or seen_wide <= 0.0:
+		fails.append("the streamer produced no neck/room pair in 600m - the"
+			+ " level stack is not reaching the world")
+	elif seen_wide - seen_narrow < 6.0:
+		fails.append("the funnel's weave differs by only %.1fm between a neck"
+			% (seen_wide - seen_narrow) + " and a room - it is not following"
+			+ " the section")
+	# The weave must stay INSIDE its section, or the props are never reached.
+	for wv in [NECK_HALF, ROOM_HALF, CORRIDOR_HALF_WIDTH]:
+		var reach: float = wv * WEAVE_OF_HALF * (1.0 + 0.4 + 0.5)
+		if reach > wv + 1.0:
+			fails.append("in a %.0fm section the weave reaches %.0fm - the"
+				% [wv, reach] + " funnel spends time outside its own corridor")
+	tornado.global_position = keep_tz
+
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game
 	# actually draws through; BrickLib.mat() covers the minifig and loose
@@ -2986,7 +3305,7 @@ func _run_selftest() -> void:
 	# So that is what this does, stepping the streamer as the funnel advances.
 	var keep_player := player.global_position
 	var keep_storm := tornado.global_position
-	player.global_position = Vector3(0, 0.4, keep_storm.z)
+	player.global_position = Vector3(0, 0.4 + Terrain.height(0, keep_storm.z), keep_storm.z)
 	_stream_t = -1.0
 	_stream_world(0.016)
 	if areamap.area_at(player.global_position.z) == null:

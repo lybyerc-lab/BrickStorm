@@ -165,6 +165,21 @@ jobs:
             | grep -E "SWINGPROBE"
           grep -q "SWINGPROBE OK" swing.log
 
+      # The ground's height function exists TWICE - once in GLSL, where it
+      # displaces the mesh, and once in GDScript, where it places the collider,
+      # the props and the studs. Nothing in the game can report that they have
+      # drifted: the world simply stops matching itself, props sink into
+      # hillsides and the player walks on air. This renders the GPU's residual
+      # against the CPU's value under gain, having first measured its own
+      # grey-to-metres curve, and catches a single mistyped digit.
+      - name: Terrain probe (the drawn ground is the ground you stand on)
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 256x256x24" "$GODOT" --path . --resolution 256x256 \
+            --script res://tools/terrain_probe.gd 2>&1 | tee terrain.log \
+            | grep -E "coarse|calibration|compared|TERRAINPROBE"
+          grep -q "TERRAINPROBE OK" terrain.log
+
       - name: Export Web
         run: |
           mkdir -p build/web

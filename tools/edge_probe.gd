@@ -43,8 +43,8 @@ func _run() -> void:
 	# The ground exactly as main.gd builds it.
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(420, 420)
-	pm.subdivide_width = 4
-	pm.subdivide_depth = 4
+	pm.subdivide_width = 128
+	pm.subdivide_depth = 128
 	var mi := MeshInstance3D.new()
 	mi.mesh = pm
 	var gm := ShaderMaterial.new()

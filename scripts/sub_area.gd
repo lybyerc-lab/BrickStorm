@@ -22,6 +22,22 @@ var kind: int = Kind.PROCEDURAL
 var z0: float = 0.0
 var depth: float = 0.0
 
+# ---- the level's SHAPE ---------------------------------------------------
+# How wide the corridor is HERE. The level was one 92m-wide ribbon from end to
+# end, which is what made it read as a treadmill however varied the props got:
+# a route with no shape is a corridor no matter what is standing in it. Areas
+# now alternate between rooms and necks and the rooms grow stage by stage, so
+# the level stacks as a chain of places rather than extruding.
+#
+# THE STORM'S WEAVE IS DERIVED FROM THIS, not set beside it. A narrow section
+# with a wide weave puts the funnel outside the props - measured on the
+# authored scenes, where composing everything into the middle twenty metres
+# dropped what the storm could reach to a tenth. See BS:WORLD:LEVEL_STACK.
+var half_width: float = 46.0
+# Which stage of the level this area belongs to. Drives width, density and how
+# far back the camera sits.
+var stage: int = 0
+
 # Structures born in this area. The area owns them for lifecycle purposes; a
 # structure that has WANDERED out (thrown by the funnel) is re-homed on
 # retirement rather than freed early. See AreaMap.retire_behind.
@@ -61,5 +77,5 @@ func framing_weight(z: float) -> float:
 
 
 func describe() -> String:
-	return "%s[%.0f..%.0f]%s" % [id, z0, z1(),
+	return "%s[%.0f..%.0f]w%.0f/s%d%s" % [id, z0, z1(), half_width, stage,
 		"*" if kind == Kind.AUTHORED else ""]

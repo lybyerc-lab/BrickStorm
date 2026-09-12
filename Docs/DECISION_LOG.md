@@ -1383,3 +1383,96 @@ invariant that keeps hand-composed ground from being scattered with procedural
 props was written down nowhere the verifier could check. It has one now
 (78 anchors). Prose in `Docs/` is exempt: a decision log legitimately names a
 retired anchor when recording that it was retired.
+
+## 2026-09-12 — The level has a shape
+
+The director's note was that the playing field is long, that the demo's levels
+stack next to each other and expand the playing area with elevation, and that
+we want level progression. Two separate problems were hiding inside that.
+
+### The field was long because two thirds of it was not there
+
+`_build_ground` made ONE 420m PlaneMesh at the origin and never moved it. It
+spans z = -210..210; a 200-second round carries the storm past z = 600. Past
+the edge there are no fields, no section roads, no plough rows - just the
+sky's own ground colour as a flat olive band. **Every capture shot this project
+has ever taken is from the first thirty seconds of a round**, which is exactly
+why nobody saw it. `tools/edge_probe.gd` renders the same ground from four
+points down the corridor and the last two are blank.
+
+The comment above it claimed the ground was "world-locked and therefore has no
+edge to run off". That was true of the SHADER and not of the mesh it is painted
+on - and because the shader really is world-locked, sliding the mesh under the
+player is invisible.
+
+### Elevation: one function, written twice, gated
+
+`shaders/ground_height.gdshaderinc` displaces the mesh on the GPU.
+`scripts/terrain.gd` places the collider, the props and the studs on the CPU.
+They are the same trigonometry in two languages, and **nothing in the game can
+report that they have drifted** - the world just stops matching itself.
+
+Tuned against measured targets rather than by eye: **9.3m of relief along the
+centreline, 4.5m across the corridor, 18% worst grade** (about ten degrees,
+well inside the 45 a CharacterBody3D walks). The first coefficients gave 4.6m
+along and under 2m across, which rendered as indistinguishable from flat.
+
+Pure sin and cos, deliberately: a hash noise function cannot be made
+bit-identical across GLSL and GDScript, so agreement would be unachievable by
+construction.
+
+**The first version of the terrain gate was vacuous.** It encoded absolute
+height as greyscale over a 16m range - 0.063m per code at best, 0.25m once the
+framebuffer's transfer curve is included. Dropping an ENTIRE TERM from the
+height function moved the worst sample 0.672m and PASSED a 0.75m tolerance. It
+now renders `(gpu - cpu) * gain` instead, so the encoding's precision is
+irrelevant, and it measures its own grey-to-metres curve before trusting it -
+a naive linear decode was wrong by 0.157m on a ramp the CPU could predict
+exactly. It catches a single mistyped digit (0.0132 for 0.0131) at 0.0238m.
+
+### The level stack
+
+Areas alternate ROOM and NECK, and rooms grow by stage: 30m half-width at
+stage 0, then 36, 42, 46. Necks stay at 18m. **The storm's weave is DERIVED
+from the section width**, eased at boundaries rather than snapped - a wide
+weave in a narrow section puts the funnel outside the props, which is measured
+rather than theoretical: composing the authored scenes into the middle twenty
+metres cut what a passing funnel could reach to a tenth and took the
+destruction with it. The camera pulls back in the wide sections, so the space
+opening out is something the player sees. Authored set pieces are always
+full-width rooms, whatever stage they land in.
+
+**The first widths did not work and my own gate passed them.** Rooms started at
+44m against a 46m ceiling, so they "grew" 44 -> 46 and clamped: a two-metre
+progression across a whole round. The gate said `later > first`, which was
+true and meaningless. It demands a 10m gap now.
+
+### Four gates of mine that were wrong before they were right
+
+Recorded because the pattern is consistent and worth naming: **a gate that
+manufactures world state ends up testing the state it manufactured.**
+
+- The reclaim gate recomputed the horizon from its own copy of the corrected
+  formula. The old code passed it.
+- Rewritten to park a structure by the player - but reclaim is AREA-granular
+  and `adopt()` is total, so the witness landed in a straddling area and
+  survived either way.
+- Rewritten to teleport the player 220m back - but areas are only created
+  ahead of the frontier, so it demanded ground reclaimed long before and
+  failed the CORRECT code.
+- The terrain-collider gate parked the funnel on the spot being tested, so the
+  player stood INSIDE the tornado, was tumbled, `_physics_process` took its
+  early return, `move_and_slide` never ran, and `is_on_floor()` was never
+  true. It reported "there is no collision under the drawn ground" about
+  ground that was perfectly solid.
+
+### And one misdiagnosis to correct
+
+I reported that a `--selftest` hang was the cost of the collision heightmap and
+"fixed" it by cutting the maps fourfold. The actual cause was a PARSE ERROR -
+`keep_t` declared twice at function scope - so `main.gd` never loaded and the
+process idled to its timeout. The reduction is still worth having (two 261x261
+maps is 136k `Terrain.height` calls per rebuild, a visible hitch every 24m
+travelled on a phone) but it was not the fix, and I stated it as though it
+were. `_run_selftest` is 1178 lines, which is why the same class of clash bit
+twice; splitting it is on the list.

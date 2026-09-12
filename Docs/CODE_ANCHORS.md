@@ -143,6 +143,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:ECONOMY:FINISH_BONUS]` — `scripts/main.gd` — finishing a structure drops a big stud where it stood
 
 - `[BS:RENDER:FACE]` — `shaders/face.gdshader` — the face wrap computed from position, and why it is not authored on the mesh
+- `[BS:RENDER:TERRAIN]` — `shaders/ground_height.gdshaderinc` — the one definition of ground height on the GPU side, gated against its GDScript twin
 - `[BS:RENDER:GROUND]` — `shaders/ground.gdshader` — the ground is textured earth, not a baseplate, and why that is the point
 - `[BS:BUILD:TORSO]` — `scripts/brick_lib.gd` — one tapered torso part, and why its print is ink-line artwork
 - `[BS:RENDER:TORSO]` — `shaders/torso.gdshader` — printing the front face, selected by the local normal
@@ -154,6 +155,8 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:RENDER:PLASTIC]` — `scripts/brick_lib.gd` — the one definition of what plastic looks like, and why the fresnel term is bricks-only
 - `[BS:WORLD:ENVIRONMENT]` — `scripts/main.gd` — sky, light, fog
 - `[BS:WORLD:GROUND]` — `scripts/main.gd` — ground plane and crop squares
+- `[BS:WORLD:TERRAIN]` — `scripts/terrain.gd` — how high the ground is on the CPU side, and why it must match the shader term for term
+- `[BS:WORLD:LEVEL_STACK]` — `scripts/main.gd` — the level's shape: rooms, necks, stages, and the storm's weave derived from the width
 - `[BS:WORLD:AREA_MAP]` — `scripts/area_map.gd` — the corridor's division into sub-areas, and the reservation that keeps authored ground authored
 - `[BS:WORLD:AREA_STATE]` — `scripts/main.gd` — the sub-area's intensity state, and the ambience bed that follows it
 - `[BS:WORLD:NEAR_CACHE]` — `scripts/main.gd` — cached short list of nearby structures for the per-frame hot loops

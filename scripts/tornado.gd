@@ -44,7 +44,17 @@ var _wobble := Vector3.ZERO
 # Corridor mode: the storm travels a route instead of looping an arena, so it
 # is always arriving at ground it has not already eaten.
 var corridor_mode: bool = false
+# How far the funnel weaves either side of the corridor's centreline. DERIVED
+# from the width of the sub-area it is travelling through - main.gd eases
+# `corridor_target` at each area boundary and this follows it - rather than
+# being a constant the level shape has to be kept in step with by hand. A weave
+# wider than its section puts the funnel outside the props; a weave narrower
+# than its section wastes the room. See BS:WORLD:LEVEL_STACK.
 var corridor_drift: float = 22.0
+var corridor_target: float = 22.0
+# Metres per second of easing. Fast enough to have taken up the new width
+# within an area, slow enough that a boundary is never a sideways jump.
+const DRIFT_EASE := 5.0
 
 
 func _ready() -> void:
@@ -280,9 +290,16 @@ func _physics_process(delta: float) -> void:
 func _advance_path(delta: float) -> void:
 	if corridor_mode:
 		global_position.z += move_speed * pace() * delta
+		corridor_drift = move_toward(corridor_drift, corridor_target,
+			DRIFT_EASE * delta)
 		global_position.x = sin(_t * 0.16) * corridor_drift \
 			+ cos(_t * 0.071) * corridor_drift * 0.4 \
 			+ sin(_t * 0.0237 + 2.1) * corridor_drift * 0.5
+		# The funnel stands ON the ground, so it climbs the rises with it.
+		# Left at zero it would cut into a crest and hang over a hollow, and
+		# funnel_pos() feeds every tear-radius test in the game - a funnel at
+		# the wrong height tears the wrong things. See BS:WORLD:TERRAIN.
+		global_position.y = Terrain.height(global_position.x, global_position.z)
 		return
 	if _waypoints.size() < 2:
 		return

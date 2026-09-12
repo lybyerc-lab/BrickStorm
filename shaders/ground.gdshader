@@ -28,6 +28,12 @@
 //   factor. Same lesson the baseplate's studs taught.
 shader_type spatial;
 
+// The ground has HEIGHT, and this is the only place the mesh learns it. The
+// same function places the collider, the props and the studs from
+// scripts/terrain.gd; tools/terrain_probe.gd gates the two against each other,
+// because a formula living in two languages has no other way to be checked.
+#include "res://shaders/ground_height.gdshaderinc"
+
 // Desaturated but NOT darkened. An early pass took saturation out by lowering
 // value with it and the frame median fell from 93 to 66 - the one thing pillar
 // 2 forbids outright. Colourfulness comes down; brightness stays.
@@ -97,7 +103,20 @@ vec3 crop_of(vec2 cell) {
 
 
 void vertex() {
-	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Displace in WORLD space. The mesh slides under the player, so its model
+	// origin moves; sampling by world position is what keeps the hills nailed
+	// to the ground instead of travelling with the player.
+	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	w.y = bs_ground_h(w.xz);
+	v_world = w;
+	VERTEX = (inverse(MODEL_MATRIX) * vec4(w, 1.0)).xyz;
+
+	// Normal from finite differences of the same function, so the lighting can
+	// never disagree with the shape the way a hand-derived gradient can.
+	float e = 2.0;
+	float hx = bs_ground_h(w.xz + vec2(e, 0.0)) - bs_ground_h(w.xz - vec2(e, 0.0));
+	float hz = bs_ground_h(w.xz + vec2(0.0, e)) - bs_ground_h(w.xz - vec2(0.0, e));
+	NORMAL = normalize(vec3(-hx, 2.0 * e, -hz));
 }
 
 
