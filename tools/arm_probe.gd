@@ -1,7 +1,14 @@
 extends SceneTree
+
+# Where to write. Set FIGPROBE_OUT in the environment to keep a "before" set.
+var OUT: String = "/home/user/brickstorm_shots/props"
 func _initialize() -> void:
 	_run()
 func _run() -> void:
+	var env := OS.get_environment("FIGPROBE_OUT")
+	if env != "":
+		OUT = env
+	DirAccess.make_dir_recursive_absolute(OUT)
 	var r := Node3D.new()
 	root.add_child(r)
 	var we := WorldEnvironment.new()
@@ -26,13 +33,20 @@ func _run() -> void:
 	r.add_child(cam)
 	await process_frame
 	cam.current = true
-	for shot in [["front", Vector3(0, 1.25, 3.0)], ["threequarter", Vector3(1.9, 1.5, 2.3)]]:
+	for shot in [["front", Vector3(0, 1.25, -3.0)], ["threequarter", Vector3(1.9, 1.5, -2.3)],
+			["side", Vector3(3.0, 1.25, 0.0)], ["back", Vector3(0, 1.25, 3.0)],
+			["head", Vector3(0.9, 1.62, -1.1)], ["feet", Vector3(1.2, 0.55, -1.4)]]:
 		cam.global_position = shot[1]
-		cam.look_at(Vector3(0, 1.15, 0), Vector3.UP)
+		var aim := Vector3(0, 1.15, 0)
+		if shot[0] == "head":
+			aim = Vector3(0, 1.52, 0)
+		elif shot[0] == "feet":
+			aim = Vector3(0, 0.18, 0)
+		cam.look_at(aim, Vector3.UP)
 		for i in range(4):
 			await process_frame
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(
-			"/home/user/brickstorm_shots/props/rest_%s.png" % shot[0])
+			"%s/rest_%s.png" % [OUT, shot[0]])
 	print("ARMPROBE done")
 	quit()

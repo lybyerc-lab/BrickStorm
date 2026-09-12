@@ -861,9 +861,15 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		leg.position = Vector3(0, -leg_h * 0.35, 0)
 		leg.scale = Vector3(0.92, 1.0, torso_d / STUD)
 		hip.add_child(leg)
+		# CLOWN FEET, and a unit bug. This was (torso_d + 3.0) / STUD, which
+		# mixes world units with millimetres: torso_d is 0.5 world units, so
+		# the foot came out (0.5 + 3.0) / 0.5 = 7.0 - a 1x1 part stretched to
+		# SEVEN STUDS deep, half a metre of shoe fore and aft. The 3.0 was
+		# meant to be 3mm of overhang past the leg. Reported from a phone as
+		# clown feet, and the side render shows a black slab under the figure.
 		var foot := brick_visual(1, 1, 1.6 * mm, C_BLACK, false)
 		foot.position = Vector3(0, -leg_h * 0.70 + 0.8 * mm, 1.2 * mm)
-		foot.scale = Vector3(0.96, 1.0, (torso_d + 3.0) / STUD)
+		foot.scale = Vector3(0.96, 1.0, (torso_d + 3.0 * mm) / STUD)
 		hip.add_child(foot)
 
 	# --- torso: a TRAPEZOID, narrow at the neck, flaring to the waist -------
@@ -957,10 +963,26 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# it cuts across the eyes and reads as a welding visor, which is what it
 	# was doing - the brows are 2.9mm down from the crown, so the hair's
 	# underside has to stay above that.
-	var cap := brick_visual(2, 1, 4.0 * mm, hair, false)
-	cap.position = Vector3(0, head_y - hip_y + head_h * 0.5 + 0.6 * mm, 0)
-	cap.scale = Vector3(0.88, 1.0, 0.88)
-	upper.add_child(cap)
+	# HAIR FOLLOWS THE SKULL. This was a 2x1 BRICK perched on a round head -
+	# 0.88 wide against a 0.75 diameter skull and only 0.44 deep, so it
+	# overhung left and right, left the crown bare front and back, and had four
+	# corners hanging in the air. Reported from a phone as a toupee, which is
+	# exactly what a rectangular slab on a cylinder looks like.
+	#
+	# Two round courses instead: a mass that wraps the skull down to just above
+	# the brows, and a slightly smaller crown on top. Symmetric front to back,
+	# because hair reads as hair from every angle and a fringe that guesses
+	# which way the face points would be wrong half the time.
+	var hair_r := head_r * 1.06
+	var brow_floor := head_y - hip_y + head_h * 0.5 - 2.6 * mm   # stay above the brows
+	var mass := brick_visual(1, 1, 3.4 * mm, hair, false, PART_ROUND)
+	mass.scale = Vector3(hair_r * 2.0 / STUD, 1.0, hair_r * 2.0 / STUD)
+	mass.position = Vector3(0, brow_floor + 1.7 * mm, 0)
+	upper.add_child(mass)
+	var crown := brick_visual(1, 1, 2.2 * mm, hair, false, PART_ROUND)
+	crown.scale = Vector3(hair_r * 1.74 / STUD, 1.0, hair_r * 1.74 / STUD)
+	crown.position = Vector3(0, brow_floor + 3.4 * mm + 1.1 * mm, 0)
+	upper.add_child(crown)
 
 	return root
 

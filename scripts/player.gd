@@ -294,6 +294,13 @@ func _tumbling(delta: float) -> void:
 # - Amplitude scales with actual speed, so a shove from the wind animates too.
 # - The pose always returns to neutral when stopped; it must never leave the
 #   rig frozen mid-stride.
+# - A SMASH IS VISIBLE. The arms were driven from the walk phase and nothing
+#   else, so hitting SMASH moved the world and not the character: bricks flew
+#   off a wall while the minifig stood there, or kept strolling. Reported from
+#   a phone as "when I smash stuff the arms don't show movement". swing()
+#   overrides both shoulders together for SMASH_TIME, and it fires whether or
+#   not anything was in range - a button that sometimes does nothing visible
+#   reads as a dropped input.
 # --- gait: where a character's walk originates ------------------------------
 # The thing that makes two minifigs built from identical parts read as
 # different people, and part of the same walk cycle above.
@@ -323,7 +330,37 @@ const GAIT := {
 }
 
 
+# A two-handed overhead slam: both arms up, then driven down hard. A minifig
+# has no elbow, so the whole character has to sell the hit - which is why the
+# upper body pitches into it rather than the arms simply rotating.
+const SMASH_TIME := 0.34
+var smash_timer: float = 0.0
+
+
+func swing() -> void:
+	smash_timer = SMASH_TIME
+
+
+# THE swing curve. Shared with tools/swing_probe.gd so the picture shows the
+# shipped motion rather than a re-typed copy of it - a probe that restates the
+# formula it is checking proves only that the author can type it twice.
+# t runs 0 to 1 across SMASH_TIME. Cubic ease-out puts the speed at the front
+# of the motion, where a hit wants it.
+static func swing_angle(t: float) -> float:
+	var e: float = 1.0 - pow(1.0 - clampf(t, 0.0, 1.0), 3.0)
+	return lerpf(-2.05, 0.55, e)
+
+
+static func swing_pitch(t: float) -> float:
+	return sin(clampf(t, 0.0, 1.0) * PI) * 0.26
+
+
 func _animate_walk(delta: float, spd: float) -> void:
+	# Tick the swing BEFORE the rig check. Behind that early return the timer
+	# could never reach zero for a character whose parts had not been cached,
+	# leaving the swing latched on forever.
+	if smash_timer > 0.0:
+		smash_timer = maxf(smash_timer - delta, 0.0)
 	var p: Dictionary = _parts.get(character, {})
 	if p.is_empty():
 		return
@@ -340,10 +377,24 @@ func _animate_walk(delta: float, spd: float) -> void:
 		p["hl"].rotation.x = sw * g["leg"]
 	if p["hr"] != null:
 		p["hr"].rotation.x = -sw * g["leg"]
+	# The swing OWNS both shoulders while it lasts, so it is not fighting the
+	# walk for the same bone. t runs 0 to 1 across SMASH_TIME; the arms start
+	# raised and are driven down on a cubic ease-out, which puts the speed at
+	# the front of the motion where a hit wants it.
+	var swinging := smash_timer > 0.0
+	var arm_l: float = -sw * g["arm"]
+	var arm_r: float = sw * g["arm"]
+	var pitch_in := 0.0
+	if swinging:
+		var t: float = 1.0 - smash_timer / SMASH_TIME
+		var ang: float = swing_angle(t)
+		arm_l = ang
+		arm_r = ang
+		pitch_in = swing_pitch(t)
 	if p["sl"] != null:
-		p["sl"].rotation.x = -sw * g["arm"]
+		p["sl"].rotation.x = arm_l
 	if p["sr"] != null:
-		p["sr"].rotation.x = sw * g["arm"]
+		p["sr"].rotation.x = arm_r
 
 	var pelvis: Node3D = p.get("pelvis")
 	if pelvis != null:
@@ -361,7 +412,7 @@ func _animate_walk(delta: float, spd: float) -> void:
 		upper.rotation.y = -sw * g["twist"]
 		# Lean into the run. Positive x pitches the upper body toward +Z, which
 		# is the direction this rig faces - see BS:RENDER:FACE.
-		upper.rotation.x = amp * g["lean"]
+		upper.rotation.x = amp * g["lean"] + pitch_in
 
 	_visual_root.position.y = absf(sin(_walk_phase)) * amp * g["bob"]
 # [BS:PLAYER:WALK_CYCLE:END]

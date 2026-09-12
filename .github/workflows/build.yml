@@ -152,6 +152,19 @@ jobs:
             | grep -E "comparator|scene |SCENEPROBE|FAIL"
           grep -q "SCENEPROBE OK" scenes.log
 
+      # A smash that moves bricks but not the character reads as a dropped
+      # input. Nothing headless can see it - the tear is correct, the score
+      # goes up, the gate passes - so this renders the swing and measures how
+      # far the arms actually sweep, through Player's own curve rather than a
+      # retyped copy of it.
+      - name: Swing probe (the smash shows on the minifig)
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 900x600x24" "$GODOT" --path . --resolution 900x600 \
+            --script res://tools/swing_probe.gd 2>&1 | tee swing.log \
+            | grep -E "SWINGPROBE"
+          grep -q "SWINGPROBE OK" swing.log
+
       - name: Export Web
         run: |
           mkdir -p build/web

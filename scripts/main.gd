@@ -86,6 +86,9 @@ var _authored_populated: int = 0
 var _amb: AudioStreamPlayer3D = null
 const STREAM_AHEAD := 190.0
 const STREAM_BEHIND := 95.0
+# How far behind the storm the world is still kept for a lagging player. Bounds
+# what a stopped player can make the streamer retain.
+const MAX_TRAIL := 340.0
 const CORRIDOR_HALF_WIDTH := 46.0
 # How far apart the hand-composed scenes sit, and how much corridor each one
 # reserves. Before this there was exactly ONE authored area in the game and it
@@ -400,7 +403,19 @@ func _stream_world(delta: float) -> void:
 
 	# Retire whole areas rather than testing every structure every pass. The
 	# map re-homes anything the funnel has thrown ahead of the cutoff.
-	var cutoff := tornado.funnel_pos().z - STREAM_BEHIND
+	# RECLAIM BEHIND THE PLAYER, NOT BEHIND THE STORM. This was
+	# funnel_pos().z - STREAM_BEHIND, so the horizon was tied to the funnel
+	# alone: let the storm pull ahead and the cutoff marched past the player,
+	# deleting fences and barns INSIDE THEIR VIEW. Reported from a phone as
+	# "things keep disappearing as the tornado gets further", which is exactly
+	# what it was. Whichever of the two is further back now sets the horizon,
+	# so nothing within STREAM_BEHIND of the player is ever reclaimed.
+	var anchor := minf(tornado.funnel_pos().z, player.global_position.z)
+	# ...but a player who simply stops must not make the corridor grow without
+	# bound on a phone, so the trail is capped. Past MAX_TRAIL they are far
+	# outside the chase the game is about.
+	anchor = maxf(anchor, tornado.funnel_pos().z - MAX_TRAIL)
+	var cutoff := anchor - STREAM_BEHIND
 	for st in areamap.retire_behind(cutoff):
 		st.queue_free()
 	areamap.compact()
@@ -1144,6 +1159,10 @@ func _on_build_released() -> void:
 func _do_smash() -> void:
 	if driving != null:
 		return
+	# Swing FIRST and unconditionally. The animation is the feedback that the
+	# button was heard; gating it on finding something in range meant pressing
+	# SMASH next to empty ground did nothing at all on screen.
+	player.swing()
 	var p := player.global_position
 	var reach := player.smash_radius()
 	var hit := 0
@@ -1976,6 +1995,28 @@ func _run_selftest() -> void:
 		fails.append("truck moved only %.1fm under full throttle" % drove)
 	if ram_torn <= 0:
 		fails.append("ramming a barn tore nothing")
+
+	# THE NOSE LEADS. Nothing in the driving maths can catch a model laid out
+	# on the wrong axis: the truck was built along +X while it drives along +Z,
+	# so for the whole life of the project its nose pointed ninety degrees off
+	# the direction of travel and every assertion about driving still passed.
+	# It took playing it on a phone to see. This compares the direction the
+	# GEOMETRY points with the direction the body actually moved.
+	var nose: Node3D = truck.find_child("Nose", true, false)
+	if nose == null:
+		fails.append("the truck has no Nose - BS:VEHICLE:DRIVE cannot tell"
+			+ " which way it is pointing")
+	else:
+		var went := truck.global_position - drive_from
+		went.y = 0.0
+		var points := nose.global_position - truck.global_position
+		points.y = 0.0
+		if went.length() > 1.0 and points.length() > 0.1:
+			var align := went.normalized().dot(points.normalized())
+			if align < 0.9:
+				fails.append("the truck drove %.0f degrees off its own nose"
+					% rad_to_deg(acos(clampf(align, -1.0, 1.0)))
+					+ " - the model is laid out on the wrong axis")
 	_forced_input = Vector2.ZERO
 	_exit_vehicle()
 	if driving != null:
@@ -2009,6 +2050,40 @@ func _run_selftest() -> void:
 		fails.append("six player SMASHes tore %d bricks off a silo - under %d"
 			% [smash_torn, SMASH_TORN_MIN]
 			+ " the smash is not connecting, however green this looks")
+
+	# --- 2b. the smash is visible on the character -----------------------
+	# A smash used to move bricks and nothing else: the arms were driven from
+	# the walk phase alone, so the button had no effect on screen. Every gate
+	# stayed green because the TEARING was correct - the score went up, the
+	# rubble appeared. Only playing it showed the minifig standing still
+	# through it. See BS:PLAYER:WALK_CYCLE.
+	var sl: Node3D = player.find_child("ShoulderL", true, false)
+	var sr: Node3D = player.find_child("ShoulderR", true, false)
+	if sl == null or sr == null:
+		fails.append("the player rig has no shoulders - the smash cannot show")
+	else:
+		player.smash_timer = 0.0
+		await get_tree().physics_frame
+		var rest_l: float = sl.rotation.x
+		player.swing()
+		var peak := 0.0
+		var mismatch := 0.0
+		for i in range(6):
+			await get_tree().physics_frame
+			peak = maxf(peak, absf(sl.rotation.x - rest_l))
+			mismatch = maxf(mismatch, absf(sl.rotation.x - sr.rotation.x))
+		if peak < 0.8:
+			fails.append("SMASH moves the arms by %.2f rad - that is not a" % peak
+				+ " swing, and the player will not see it")
+		# Both arms together: this is a two-handed slam, not another stride.
+		if mismatch > 0.05:
+			fails.append("the smash drives the two shoulders %.2f rad apart"
+				% mismatch + " - it is being overwritten by the walk cycle")
+		# ...and it must let go of the rig afterwards.
+		for i in range(int(Player.SMASH_TIME * 61.0) + 8):
+			await get_tree().physics_frame
+		if player.smash_timer > 0.0:
+			fails.append("the smash swing never ends - the rig is stuck in it")
 
 	# --- 3. jump ----------------------------------------------------------
 	# Park the funnel well away first: a lingering tumble from the smash test
@@ -2807,6 +2882,55 @@ func _run_selftest() -> void:
 		fails.append("no grace period after a tumble - player can be re-tumbled instantly")
 	if not player.immune_to_lift():
 		fails.append("grace period does not actually prevent being lifted")
+
+	# --- 9. the ground under the player is never reclaimed ---------------
+	# LAST, DELIBERATELY. This one walks the storm 360m down the corridor, and
+	# the streaming that follows cannot be undone - run earlier it left the
+	# camera's framing hints pointing at a distant area and failed gate 5.
+	# A check that mutates the world belongs after the checks that read it.
+	# The reclaim horizon used to be tied to the funnel alone, so a player who
+	# fell behind watched the world dissolve around them while every existing
+	# check stayed green - the corridor was still tiled, still streaming, still
+	# the right size. It only showed up on a phone.
+	#
+	# THREE EARLIER VERSIONS OF THIS GATE WERE WRONG, and each failure is a
+	# different way to write a test that proves nothing:
+	#   1. It recomputed the horizon from its own copy of the corrected
+	#      formula. Restating a fix is not testing it - the old code passed.
+	#   2. It parked a structure beside the player. Reclaim is AREA-granular
+	#      and adopt() is total, so the witness landed in an area straddling
+	#      the cutoff and survived either way: a gate that could not fail.
+	#   3. It TELEPORTED the player 220m back and checked the ground was there.
+	#      Areas are only ever created ahead of the frontier, so it was asking
+	#      for ground that had been reclaimed long before - a state no real
+	#      session can reach, and it failed the correct code.
+	# What actually happens is that the player STOPS and the storm pulls away.
+	# So that is what this does, stepping the streamer as the funnel advances.
+	var keep_player := player.global_position
+	var keep_storm := tornado.global_position
+	player.global_position = Vector3(0, 0.4, keep_storm.z)
+	_stream_t = -1.0
+	_stream_world(0.016)
+	if areamap.area_at(player.global_position.z) == null:
+		fails.append("the reclaim check starts with the player on no sub-area,"
+			+ " so it cannot tell whether the streamer took one")
+	else:
+		var stood_on := 0
+		for step in range(18):
+			tornado.global_position.z += 20.0
+			_stream_t = -1.0
+			_stream_world(0.016)
+			if areamap.area_at(player.global_position.z) == null:
+				break
+			stood_on += 1
+		var held: float = float(stood_on) * 20.0
+		if held < MAX_TRAIL:
+			fails.append("a standing player loses the ground under them once the"
+				+ " storm is %.0fm ahead, inside the %.0fm trail" % [held, MAX_TRAIL]
+				+ " - that is 'things keep disappearing as the tornado gets"
+				+ " further'")
+	player.global_position = keep_player
+	tornado.global_position = keep_storm
 
 	var torn := _total_torn()
 	if torn < 10:

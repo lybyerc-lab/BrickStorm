@@ -33,7 +33,10 @@ func _ready() -> void:
 
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(4.2, 1.6, 2.4)
+	# LONG AXIS ALONG Z, because +Z is forward - see _build_visual. This was
+	# 4.2 x 2.4 the other way round, so the truck also COLLIDED sideways: a
+	# wide slab travelling on its long edge.
+	bs.size = Vector3(2.4, 1.6, 4.2)
 	cs.shape = bs
 	cs.position = Vector3(0, 0.9, 0)
 	add_child(cs)
@@ -41,37 +44,51 @@ func _ready() -> void:
 
 
 func _build_visual() -> void:
+	# FORWARD IS +Z. _physics_process drives along Vector3(sin(heading), 0,
+	# cos(heading)), which at heading 0 is +Z, and sets rotation.y = heading.
+	# This truck was built along +X instead, so its nose pointed ninety degrees
+	# off the direction of travel at every heading - permanently broadside.
+	# Nothing in the maths was wrong; the model was laid out on the wrong axis,
+	# which is why it looked like a steering bug and was not one.
 	_visual = Node3D.new()
 	add_child(_visual)
 
-	var chassis := BrickLib.brick_visual(8, 4, 0.2, BrickLib.C_DGREY, false)
+	var chassis := BrickLib.brick_visual(4, 8, 0.2, BrickLib.C_DGREY, false)
 	chassis.position = Vector3(0, 0.42, 0)
 	_visual.add_child(chassis)
 
-	var bed := BrickLib.brick_visual(5, 4, 0.96, body_colour)
-	bed.position = Vector3(-0.7, 0.95, 0)
+	var bed := BrickLib.brick_visual(4, 5, 0.96, body_colour)
+	bed.position = Vector3(0, 0.95, -0.7)
 	_visual.add_child(bed)
 
 	var cab := BrickLib.brick_visual(4, 4, 0.84, BrickLib.C_TRANS, false)
-	cab.position = Vector3(0.5, 1.35, 0)
+	cab.position = Vector3(0, 1.35, 0.5)
 	_visual.add_child(cab)
 
 	var hood := BrickLib.brick_visual(4, 4, 0.54, body_colour)
-	hood.position = Vector3(1.5, 0.85, 0)
+	hood.position = Vector3(0, 0.85, 1.5)
 	_visual.add_child(hood)
 
 	# a bull bar, because this truck is going to be driven into a barn
-	var bar := BrickLib.brick_visual(1, 5, 0.5, BrickLib.C_LGREY, false)
-	bar.position = Vector3(2.15, 0.75, 0)
+	var bar := BrickLib.brick_visual(5, 1, 0.5, BrickLib.C_LGREY, false)
+	bar.position = Vector3(0, 0.75, 2.15)
+	bar.name = "Nose"                        # --selftest asserts this leads
 	_visual.add_child(bar)
 
-	for sx in [-1.2, 1.2]:
-		for sz in [-1.05, 1.05]:
-			var w := BrickLib.brick_visual(1, 1, 0.6, BrickLib.C_BLACK, false)
-			w.position = Vector3(sx, 0.35, sz)
-			w.rotation.z = PI * 0.5
-			_visual.add_child(w)
-			_wheels.append(w)
+	# Round wheels, on pivots. They were 1x1 BRICKS tipped on their side -
+	# square wheels on a truck, in a project whose rule is that round things
+	# are round parts. The pivot carries the axle orientation so the spin can
+	# be applied about the wheel's own axis without fighting Euler order.
+	for sz in [-1.2, 1.2]:
+		for sx in [-1.05, 1.05]:
+			var pivot := Node3D.new()
+			pivot.position = Vector3(sx, 0.35, sz)
+			pivot.rotation.z = PI * 0.5          # lay the cylinder's axis across
+			_visual.add_child(pivot)
+			var w := BrickLib.brick_visual(1, 1, 0.55, BrickLib.C_BLACK,
+				false, BrickLib.PART_ROUND)
+			pivot.add_child(w)
+			_wheels.append(pivot)
 
 
 func is_occupied() -> bool:
@@ -146,9 +163,12 @@ func _physics_process(delta: float) -> void:
 	rotation.y = heading
 	_update_engine(speed)
 
+	# Spin about the wheel's OWN axis. The pivot's local +Y is the axle after
+	# its fixed z-rotation, and rotate_object_local does not care about Euler
+	# order the way assigning .rotation.x did.
 	var roll := speed * delta * 3.0
 	for w in _wheels:
-		w.rotation.x += roll
+		w.rotate_object_local(Vector3.UP, roll)
 
 	_check_ram(speed)
 # [BS:VEHICLE:DRIVE:END]
