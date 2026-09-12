@@ -993,13 +993,25 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# ONE tapered part with its artwork printed on the front - see
 	# BS:BUILD:TORSO. It used to be two stacked boxes, which left a visible
 	# step across the chest and had nowhere to print.
+	# A TORSO PIVOT, at the waist seam, carrying everything above it. On the
+	# real toy the arms and head hang off the torso, not off an abstract
+	# "upper" - and one node that owns them is what a breakaway needs, because
+	# detaching a torso has to take its arms and head with it. Kept as a child
+	# of Upper rather than replacing it: Upper is the counter-rotation pivot
+	# the gait is built on (see BS:PLAYER:WALK_CYCLE), and collapsing the two
+	# would mean cancelling the hip swing back out of the shoulders by hand.
+	# Positioned at the waist, so every child's local position is unchanged.
+	var body := Node3D.new()
+	body.name = "TorsoPivot"
+	upper.add_child(body)
+
 	var torso := MeshInstance3D.new()
 	torso.mesh = torso_mesh()
 	torso.scale = Vector3(torso_w, torso_h, torso_d * 2.0)
 	torso.position = Vector3(0, torso_h * 0.5, 0)
 	torso.name = "Torso"
 	torso.material_override = torso_material(shirt, C_BROWN, C_TAN)
-	upper.add_child(torso)
+	body.add_child(torso)
 
 	# The neck bracket, visible under the chin on the real part.
 	# The neck is a peg the head sits ON, and on the real part you barely see
@@ -1007,7 +1019,7 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	var neck := brick_visual(1, 1, 2.4 * mm, skin, false)
 	neck.position = Vector3(0, torso_h - 0.4 * mm, 0)
 	neck.scale = Vector3(0.40, 1.0, 0.40)
-	upper.add_child(neck)
+	body.add_child(neck)
 
 	# --- arms: hung OUTSIDE the torso, angled out and forward ---------------
 	for side in [-1.0, 1.0]:
@@ -1025,7 +1037,7 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		# part's 22mm span; at 1.0mm it was 11.6mm and visibly detached.
 		sh.position = Vector3(side * (torso_w * 0.5 + 0.4 * mm),
 			torso_h * 0.80, 0)
-		upper.add_child(sh)
+		body.add_child(sh)
 		# A MINIFIG ARM IS SLENDER AND NEARLY VERTICAL. This was 5.9mm wide and
 		# flared 0.20 radians outward, which made the pair read as shoulder
 		# pads or wings rather than as arms - clearest in a front render, where
@@ -1046,10 +1058,16 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		# A minifig hand is a C-shaped clip, not a peg. It clips onto the
 		# wrist, so it follows the swept arm's end station rather than sitting
 		# where a straight slab used to finish.
+		# Clipped to the ARM, not to the shoulder. As siblings they happened to
+		# move together, but the hand's position was hand-tuned to wherever the
+		# arm's mesh ended - so changing the arm's bend silently left the hand
+		# floating, which is exactly what happened when the sweep replaced the
+		# straight slab.
 		var hand := Node3D.new()
+		hand.name = "HandR" if side > 0.0 else "HandL"
 		hand.position = Vector3(side * 0.6 * mm, -11.9 * mm, 4.0 * mm)
 		hand.rotation = Vector3(0.62, 0, 0)
-		sh.add_child(hand)
+		a.add_child(hand)
 		for seg2 in range(5):
 			var ang: float = -PI * 0.72 + float(seg2) * (PI * 1.44 / 4.0)
 			var piece := MeshInstance3D.new()
@@ -1069,18 +1087,27 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# texture stretches with the geometry.
 	head.scale = Vector3(head_r, head_h, head_r)
 	head.material_override = face_material(skin)
-	head.position = Vector3(0, head_y - hip_y, 0)
-	head.name = "Head"
-	upper.add_child(head)
+	head.name = "HeadMesh"
+
+	# AN UNSCALED NECK PIVOT owns the head, its stud and the hair. The head
+	# MESH carries a non-uniform scale (radius, height, radius), so anything
+	# parented directly to it is squashed in x and z and stretched in y - the
+	# hair would come out an ellipsoid of the wrong shape entirely. The joint
+	# and the geometry have to be different nodes.
+	var neck_pivot := Node3D.new()
+	neck_pivot.name = "Head"
+	neck_pivot.position = Vector3(0, head_y - hip_y, 0)
+	body.add_child(neck_pivot)
+	neck_pivot.add_child(head)
 
 	# The stud on top of the head - the single most identifying feature a
 	# minifig has. Hidden under most hair, visible under a hat and bare.
 	var hstud := MeshInstance3D.new()
 	hstud.mesh = stud_mesh()
 	hstud.material_override = mat(skin)
-	hstud.position = Vector3(0, head_y - hip_y + head_h * 0.5 + STUD_H * 0.5, 0)
+	hstud.position = Vector3(0, head_h * 0.5 + STUD_H * 0.5, 0)
 	hstud.name = "HeadStud"
-	upper.add_child(hstud)
+	neck_pivot.add_child(hstud)
 
 	# Hair caps the head and overlaps it.
 	# Hair sits ON the head and stops just above the brows. Dropped any lower
@@ -1097,16 +1124,21 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# the brows, and a slightly smaller crown on top. Symmetric front to back,
 	# because hair reads as hair from every angle and a fringe that guesses
 	# which way the face points would be wrong half the time.
+	# Parented to the HEAD, so it turns with it. It used to hang off the upper
+	# body, which means a head that looked anywhere would have left its hair
+	# facing front - and a head that pops off would leave it hanging in the air.
 	var hair_r := head_r * 1.06
-	var brow_floor := head_y - hip_y + head_h * 0.5 - 2.6 * mm   # stay above the brows
+	var brow_floor := head_h * 0.5 - 2.6 * mm   # local to the neck pivot
 	var mass := brick_visual(1, 1, 3.4 * mm, hair, false, PART_ROUND)
 	mass.scale = Vector3(hair_r * 2.0 / STUD, 1.0, hair_r * 2.0 / STUD)
+	mass.name = "Hair"
 	mass.position = Vector3(0, brow_floor + 1.7 * mm, 0)
-	upper.add_child(mass)
+	neck_pivot.add_child(mass)
 	var crown := brick_visual(1, 1, 2.2 * mm, hair, false, PART_ROUND)
 	crown.scale = Vector3(hair_r * 1.74 / STUD, 1.0, hair_r * 1.74 / STUD)
+	crown.name = "HairCrown"
 	crown.position = Vector3(0, brow_floor + 3.4 * mm + 1.1 * mm, 0)
-	upper.add_child(crown)
+	neck_pivot.add_child(crown)
 
 	return root
 
@@ -1363,12 +1395,16 @@ static func torso_mesh() -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# Rings: waist (full width) up to shoulders (cut back), with a chamfer at
 	# each end so the part reads as moulded like every other brick.
+	# The taper: 0.80 at the shoulders, not 0.88. A real torso is 16mm at the
+	# waist and about 13mm across at the shoulders - 81% - so 0.88 was too
+	# slab-sided. (The figure 60% sometimes quoted is far too strong: it gives
+	# a wedge, and the arms would have nothing to socket against.)
 	var rings := [
 		[-0.5, 1.00, 0.90],
 		[-0.5 + c, 1.00, 1.00],
-		[0.10, 0.97, 1.00],
-		[0.5 - c, 0.88, 1.00],
-		[0.5, 0.88, 0.90],
+		[0.10, 0.95, 1.00],
+		[0.5 - c, 0.80, 1.00],
+		[0.5, 0.80, 0.90],
 	]
 	for ri in range(rings.size() - 1):
 		_torso_band(st, rings[ri], rings[ri + 1])

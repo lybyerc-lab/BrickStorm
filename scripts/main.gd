@@ -2717,6 +2717,53 @@ func _run_selftest() -> void:
 			% [tmax.z - tmin.z, tmax.x - tmin.x] + " as a gateway, not a barn")
 	tunnel.queue_free()
 
+	# --- 4b9. the rig is a mechanical toy, joint by joint -----------------
+	# A minifig is rigid plastic, so every pivot has to sit at a real plastic
+	# joint and every part has to hang off the part it physically clips to.
+	# This is structural rather than cosmetic, and it is exactly the kind of
+	# thing a refactor undoes silently: the hair used to hang off the upper
+	# body, so a head that turned left its hair facing front, and the hands
+	# hung off the shoulders, so re-shaping the arm left them floating in the
+	# air where the old straight arm used to end. It also sets up the pop-apart
+	# - detaching a torso has to take its arms and head with it, which needs
+	# one node that owns them. See BS:BUILD:MINIFIG.
+	var rig := BrickLib.minifig(BrickLib.C_BLUE, BrickLib.C_DGREY, BrickLib.C_BROWN)
+	var want_chain := [
+		["Pelvis", ""], ["Upper", ""], ["TorsoPivot", "Upper"],
+		["Torso", "TorsoPivot"], ["Head", "TorsoPivot"],
+		["HeadStud", "Head"], ["Hair", "Head"], ["HairCrown", "Head"],
+		["ShoulderL", "TorsoPivot"],
+		["ArmL", "ShoulderL"], ["HandL", "ArmL"],
+		["ShoulderR", "TorsoPivot"], ["ArmR", "ShoulderR"], ["HandR", "ArmR"],
+		["HipL", "Pelvis"], ["HipR", "Pelvis"],
+	]
+	for want in want_chain:
+		var node: Node = rig.find_child(String(want[0]), true, false)
+		if node == null:
+			fails.append("the rig has no %s - BS:BUILD:MINIFIG is not the"
+				% want[0] + " hierarchy the breakaway needs")
+			continue
+		if want[1] == "":
+			continue
+		var found_parent := false
+		var walk: Node = node.get_parent()
+		while walk != null and walk != rig:
+			if walk.name == String(want[1]):
+				found_parent = true
+				break
+			walk = walk.get_parent()
+		if not found_parent:
+			fails.append("%s does not hang off %s - it will not move with it"
+				% [want[0], want[1]])
+	# The neck pivot must be UNSCALED, or everything clipped to it is distorted:
+	# the head MESH carries a non-uniform scale and the hair went on as an
+	# ellipsoid the first time it was parented there.
+	var neck: Node3D = rig.find_child("Head", true, false)
+	if neck != null and not neck.scale.is_equal_approx(Vector3.ONE):
+		fails.append("the neck pivot is scaled %s - anything clipped to the"
+			% str(neck.scale) + " head comes out distorted")
+	rig.queue_free()
+
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game
 	# actually draws through; BrickLib.mat() covers the minifig and loose
