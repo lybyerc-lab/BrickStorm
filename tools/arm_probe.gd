@@ -33,15 +33,18 @@ func _run() -> void:
 	r.add_child(cam)
 	await process_frame
 	cam.current = true
-	for shot in [["front", Vector3(0, 1.25, -3.0)], ["threequarter", Vector3(1.9, 1.5, -2.3)],
-			["side", Vector3(3.0, 1.25, 0.0)], ["back", Vector3(0, 1.25, 3.0)],
-			["head", Vector3(0.9, 1.62, -1.1)], ["feet", Vector3(1.2, 0.55, -1.4)]]:
+	# THE RIG FACES +Z. Measured with tools/facing_probe.gd, because these
+	# labels were inverted: "front" was rendering the back of the figure, which
+	# is a good way to sign off on a model nobody has actually looked at.
+	for shot in [["front", Vector3(0, 1.25, 3.0)], ["threequarter", Vector3(1.9, 1.5, 2.3)],
+			["side", Vector3(3.0, 1.25, 0.0)], ["back", Vector3(0, 1.25, -3.0)],
+			["head", Vector3(0.0, 1.66, 1.9)], ["arms", Vector3(2.2, 1.28, 1.5)]]:
 		cam.global_position = shot[1]
 		var aim := Vector3(0, 1.15, 0)
 		if shot[0] == "head":
-			aim = Vector3(0, 1.52, 0)
-		elif shot[0] == "feet":
-			aim = Vector3(0, 0.18, 0)
+			aim = Vector3(0, 1.50, 0)
+		elif shot[0] == "arms":
+			aim = Vector3(0, 1.18, 0)
 		cam.look_at(aim, Vector3.UP)
 		for i in range(4):
 			await process_frame

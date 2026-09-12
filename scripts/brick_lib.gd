@@ -520,6 +520,119 @@ static func _revolve_mesh(r_bot: float, r_top: float) -> ArrayMesh:
 				Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, nn, nn, nn)
 	# No generate_tangents() here either, for the same reason.
 	return st.commit()
+# A TUBE SWEPT ALONG A BENT CENTRELINE, with a per-station radius and an
+# elliptical cross-section. Added for the minifig arm, which is the one part on
+# the figure that is neither a box nor a solid of revolution: it leaves the
+# shoulder going down and out, then bends FORWARD and inward at the midpoint,
+# so in profile it is an L. Built as a scaled brick it was a straight slab, and
+# the bend is most of what makes the silhouette read as a minifig arm.
+#
+# `ax`/`az` are the cross-section half-widths as multiples of the radius, so a
+# rounded-rectangle-ish section is one call rather than a special case.
+static func _sweep_mesh(pts: Array, radii: Array, ax: float, az: float,
+		seg: int = 10) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := pts.size()
+
+	# Frames, parallel-transported so the section does not spin as the
+	# centreline bends. Seeding each station independently twists the tube.
+	var us: Array = []
+	var vs: Array = []
+	var ref := Vector3(0, 0, 1)
+	for i in range(n):
+		var t: Vector3
+		if i == 0:
+			t = (pts[1] - pts[0])
+		elif i == n - 1:
+			t = (pts[n - 1] - pts[n - 2])
+		else:
+			t = (pts[i + 1] - pts[i - 1])
+		t = t.normalized()
+		var u: Vector3 = ref.cross(t)
+		if u.length() < 1.0e-4:
+			u = Vector3(1, 0, 0).cross(t)
+		u = u.normalized()
+		var v: Vector3 = t.cross(u).normalized()
+		ref = v
+		us.append(u)
+		vs.append(v)
+
+	# Ring vertices.
+	var ring: Array = []
+	for i in range(n):
+		var row: Array = []
+		for j in range(seg):
+			var a: float = TAU * float(j) / float(seg)
+			row.append(pts[i] + us[i] * (cos(a) * radii[i] * ax)
+				+ vs[i] * (sin(a) * radii[i] * az))
+		ring.append(row)
+
+	# Sides. The outward normal at a corner is its own radial direction, which
+	# is what wind_cw needs to get the facing right - see BS:BUILD:WINDING.
+	for i in range(n - 1):
+		for j in range(seg):
+			var k := (j + 1) % seg
+			var q := [ring[i][j], ring[i][k], ring[i + 1][k], ring[i + 1][j]]
+			var nrm: Vector3 = (ring[i][j] - pts[i]).normalized()
+			for tri in [[0, 1, 2], [0, 2, 3]]:
+				var a3: Vector3 = q[tri[0]]
+				var b3: Vector3 = q[tri[1]]
+				var c3: Vector3 = q[tri[2]]
+				var o := wind_cw(a3, b3, c3, nrm)
+				var trio := [a3, b3, c3]
+				st.set_normal(nrm)
+				for idx in o:
+					st.add_vertex(trio[idx])
+
+	# Caps, as fans about the end stations.
+	for cap in [0, n - 1]:
+		var nrm2: Vector3 = (pts[1] - pts[0]).normalized() * -1.0 if cap == 0 \
+			else (pts[n - 1] - pts[n - 2]).normalized()
+		for j in range(seg):
+			var k2 := (j + 1) % seg
+			var o2 := wind_cw(pts[cap], ring[cap][j], ring[cap][k2], nrm2)
+			var trio2 := [pts[cap], ring[cap][j], ring[cap][k2]]
+			st.set_normal(nrm2)
+			for idx2 in o2:
+				st.add_vertex(trio2[idx2])
+
+	return st.commit()
+
+
+# THE MINIFIG ARM. Cached per side, because the bend goes forward and the set
+# goes outward: mirroring one mesh with a negative scale would invert every
+# triangle, and Godot culls by winding.
+static var _arm_mesh: Dictionary = {}
+
+
+static func arm_mesh(side: float) -> ArrayMesh:
+	var key := 1 if side > 0.0 else -1
+	if _arm_mesh.has(key):
+		return _arm_mesh[key]
+	var mm := STUD / 8.0
+	var sx: float = 1.0 if side > 0.0 else -1.0
+	# Shoulder to wrist. The real part sets out about 1mm, drops 12mm, and
+	# swings some 4mm forward over the second half.
+	var pts := [
+		# Tucked UNDER the torso's shoulder, small, so the top cap does not
+		# show as a hard flat edge above the shoulder line. The first pass
+		# started 0.6mm above the pivot at radius 2.45 and the pair read as
+		# wings: a wide flat top flaring outward away from the body.
+		Vector3(0.0, -0.5 * mm, 0.0),
+		Vector3(sx * 0.26 * mm, -2.3 * mm, 0.10 * mm),
+		Vector3(sx * 0.52 * mm, -5.5 * mm, 0.70 * mm),
+		Vector3(sx * 0.60 * mm, -8.7 * mm, 2.20 * mm),
+		Vector3(sx * 0.60 * mm, -11.2 * mm, 3.50 * mm),
+	]
+	# Thickest just below the shoulder, tapering to the wrist. Near-circular:
+	# an elliptical section 1.12 deep exaggerated the flare from the front.
+	var radii := [1.70 * mm, 2.10 * mm, 2.00 * mm, 1.90 * mm, 1.80 * mm]
+	var m := _sweep_mesh(pts, radii, 0.95, 1.04, 12)
+	_arm_mesh[key] = m
+	return m
+
+
 # [BS:BUILD:PARTS:END]
 
 
@@ -907,7 +1020,10 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		# torso is 16mm across and the arms take the figure to about 22mm, so
 		# each arm overlaps the torso slightly and stands ~3mm proud - it does
 		# not float clear of it.
-		sh.position = Vector3(side * (torso_w * 0.5 + 1.0 * mm),
+		# 0.4mm proud, not 1.0mm. With the swept arm's own outward set the
+		# figure reaches ~11mm from centre either way, which is the real
+		# part's 22mm span; at 1.0mm it was 11.6mm and visibly detached.
+		sh.position = Vector3(side * (torso_w * 0.5 + 0.4 * mm),
 			torso_h * 0.80, 0)
 		upper.add_child(sh)
 		# A MINIFIG ARM IS SLENDER AND NEARLY VERTICAL. This was 5.9mm wide and
@@ -916,15 +1032,23 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 		# they stood away from the body with daylight between. The real part is
 		# about 4mm across and hangs with only a slight outward set and a small
 		# forward angle.
-		var a := brick_visual(1, 1, 12.2 * mm, shirt, false)
-		a.position = Vector3(0, -6.1 * mm, 0)
-		a.scale = Vector3(0.52, 1.0, 0.62)
-		a.rotation = Vector3(0.10, 0, side * -0.07)
+		# THE SHAPE IS THE POINT. This was a 1x1 brick scaled to 12mm - a
+		# straight slab, which is why the pair still read as panels hung off
+		# the torso even after the width was fixed. A minifig arm leaves the
+		# shoulder going down and OUT, then bends FORWARD over its second half
+		# to bring the hand in front of the body: an L in profile, and that
+		# bend is most of the silhouette. Swept, not scaled - see arm_mesh.
+		var a := MeshInstance3D.new()
+		a.mesh = arm_mesh(side)
+		a.material_override = mat(shirt)
+		a.name = "ArmR" if side > 0.0 else "ArmL"
 		sh.add_child(a)
-		# A minifig hand is a C-shaped clip, not a peg.
+		# A minifig hand is a C-shaped clip, not a peg. It clips onto the
+		# wrist, so it follows the swept arm's end station rather than sitting
+		# where a straight slab used to finish.
 		var hand := Node3D.new()
-		hand.position = Vector3(side * 1.1 * mm, -12.9 * mm, 1.8 * mm)
-		hand.rotation = Vector3(0.55, 0, 0)
+		hand.position = Vector3(side * 0.6 * mm, -11.9 * mm, 4.0 * mm)
+		hand.rotation = Vector3(0.62, 0, 0)
 		sh.add_child(hand)
 		for seg2 in range(5):
 			var ang: float = -PI * 0.72 + float(seg2) * (PI * 1.44 / 4.0)
