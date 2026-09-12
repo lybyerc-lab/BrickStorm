@@ -5,6 +5,21 @@
 # way: the streamer with a bare float frontier, the set piece with open-coded
 # arithmetic against a magic Z, and the camera and audio not at all. See
 # Docs/TT_ENGINE_NOTES.md section 8.
+# ============================================================================
+# [BS:WORLD:AREA_MAP]
+# Purpose: The corridor's division into sub-areas, and their lifecycle.
+# Invariants:
+# - Areas TILE the corridor: no gap, no overlap. --selftest asserts it.
+# - A reservation is a PROMISE OF EMPTY GROUND. reserve() marks a stretch
+#   AUTHORED, and an AUTHORED area is never handed to the populate callback -
+#   that is the entire reason this class exists rather than a bare float
+#   frontier. Scattering procedural props over hand-composed ground is the one
+#   thing a set piece exists not to be, and main.gd counts every violation.
+# - The reservation must be made BEFORE the streamer reaches that Z, or the
+#   ground is already procedural and the claim is silently ignored.
+# - Retirement is per AREA, not per structure. Anything the funnel has thrown
+#   forward is re-homed rather than deleted under the player.
+# ============================================================================
 class_name AreaMap
 extends RefCounted
 
@@ -185,3 +200,6 @@ func is_contiguous() -> bool:
 		if not is_equal_approx(areas[i].z0, areas[i - 1].z1()):
 			return false
 	return areas.is_empty() or is_equal_approx(areas[-1].z1(), frontier)
+
+
+# [BS:WORLD:AREA_MAP:END]

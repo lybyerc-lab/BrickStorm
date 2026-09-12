@@ -1251,3 +1251,135 @@ the compatibility renderer: Decal, volumetric fog, SDFGI.
 - Studs to a MultiMesh; particles on the funnel.
 - No CLAUDE.md, so the no-drift policy and the anchor discipline do not load
   into a future session automatically.
+
+## 2026-09-10 — The scenes
+
+Three hand-composed set pieces now sit along the corridor: **the drive-in**,
+**the barn you run through**, and **the cow field**. The authored-area
+machinery had existed for weeks and was used exactly once, at the start of the
+level; everything after the first forty metres was procedural, which is most of
+why the corridor read as linear.
+
+They are placed every **165 m**, occupying a **46 m** reserved slot, rotating in
+a fixed order. `AreaMap.reserve()` claims the ground ahead of the streaming
+frontier and marks it AUTHORED; the dressing happens after `ensure_ahead`, in a
+separate pass, so **`populate` is still never handed an authored area** — the
+reservation rule stays exactly as it was, and `_authored_populated` still counts
+every violation at zero.
+
+### What each scene is for
+
+- **The drive-in** — a screen, three ranks of pickups facing it, a booth, a
+  speaker post per car, and a cow standing on top of the screen. It is the one
+  scene built around a single joke.
+- **The barn run** — a barn open at both ends with a chase rig parked square
+  with the opening, fences funnelling toward it, and hay and crates inside on
+  the centreline so going through beats going round.
+- **The cow field** — a fenced pasture, a windmill, a storm cellar, and a herd
+  of nine. Law 1 (cows fly, cows land, cows are never destroyed) is what makes
+  the flying cow a joke rather than a casualty, and this is the scene that
+  exists to land it.
+
+### The barn was a gateway, and the picture said so
+
+The first barn was 12 × 20 studs. Rendered from the road it read as an *arch*:
+the field beyond filled the whole opening, and there was no tunnel to be inside
+of. Measured, that is 10.5 m deep against 6.0 m wide — 1.75:1. At 12 × 30 it is
+15.0 m against 6.0 m and it reads as what it is. **The self-test now asserts
+2:1**, and the failure message says why rather than quoting a number.
+
+The white trim took three tries, all decided by looking at a render head-on:
+
+1. A band flush to both ends terminated at the opening and read as a **white
+   patch stuck to each corner**.
+2. Full-height corner boards — which is where a real barn's white actually is —
+   turned it into a **gazebo with two bright columns** flanking the hole.
+3. A band right round the top, sides and both ends **frames the doorway**.
+
+Trim that runs horizontally frames a hole; trim that runs vertically competes
+with it. That is the whole lesson and it took a picture to see.
+
+### The cow read as a table
+
+Nine cows in a pasture, and every one of them a white slab on four black legs
+with a single patch on its spine. From a road — and from the air, thrown past
+at head height, which is the *point* of the cow — what an animal shows is its
+**side**. Patches moved to the flanks, plus a muzzle, ears and a tail. The
+silhouette is now a cow at fifty metres, which is the only distance that
+matters for the gag.
+
+### Four gates, and the one that found a real bug
+
+`--selftest` now builds all three scenes and asserts:
+
+- each has at least 10 structures and 150 parts;
+- **every part lands inside the slot the map reserved** — `[-SCENE_LEAD,
+  SCENE_DEPTH - SCENE_LEAD]` in Z and inside the corridor in X;
+- the barn's centreline is clear end to end, sampled at three heights;
+- the barn is at least twice as deep as it is wide.
+
+All four were proven to fail: by walling the barn's far end (6 of 123 sample
+points blocked), by gutting a scene to three structures, and by shrinking the
+barn back to 20 studs.
+
+**The bounds gate found a real bug on its first run.** `barn_run` parked its
+truck at z = −6 with the scene origin only 4 m into the slot, so the truck sat
+two metres inside the *previous* area, where the streamer had already scattered
+procedural props. Nothing crashes when that happens; you just get a truck in
+somebody's wheat. The lead is now a named constant, `SCENE_LEAD = 8.0`, used
+both by the placer and by the gate, so the two cannot drift apart.
+
+A second bug, found by reading rather than measuring: the scene rotation was
+`_scene_built.size() % 3`, which worked only because that dictionary happens to
+be pre-seeded with exactly two entries. Adding a third pre-seed would have
+silently reordered the entire level. It has its own counter now.
+
+### The probe that renders, and the threshold I guessed
+
+A scene can build perfectly — right structure count, right part count, every
+bound inside its slot — and **draw nothing**, if the geometry ends up behind the
+camera or under the ground. `--selftest` never renders, so it cannot see that.
+`tools/scene_probe.gd` now differences each scene's road view against an empty
+frame of the same ground and fails a scene that changes too little of it. Proven
+by sinking the scenes 400 m: all three still reported full structure, part and
+cow counts while covering 0.000 of the frame.
+
+**The comparator is validated before it is trusted.** Two empty frames are taken
+several frames apart and differenced first; if the ground drifted between frames
+or the read-back returned something that was not the picture, the drift would be
+non-zero and the probe fails *itself* rather than reporting a number nobody
+should believe. It measures 0.0000. A brightness-thresholded mask and a PNG byte
+comparison have both lied to this project before.
+
+**And I set the threshold before measuring anything.** MIN_COVER went in at 0.04
+and failed `barn_run` (0.028) and `cow_field` (0.023) — two scenes that were
+drawing perfectly well. A threshold set above the thing it is meant to admit
+tests nothing except the author's guess. It is 0.010 now, chosen from the
+measured spread: real scenes cover 0.023–0.040, a scene that does not draw
+covers 0.000.
+
+### The anchor verifier could not see a dangling reference
+
+`verify_anchors.gd` checked that every anchor in the code is registered and
+every registered anchor exists — in both directions — and still could not see
+that a comment saying "see BS:PLAYER:GAIT" pointed at an anchor folded into its
+parent months ago. **Nothing searches for a reference, so a reference rots
+silently.** The verifier now resolves every cross-reference in the code, and
+found six:
+
+| reference | reality |
+| --- | --- |
+| `BS:PLAYER:GAIT` | folded into `BS:PLAYER:WALK_CYCLE` |
+| `BS:BUILD:PLAINS` | folded into `BS:BUILD:TOWN` |
+| `BS:RENDER:LOOK` | never existed; meant `BS:WORLD:ENVIRONMENT` |
+| `BS:CONTENT:BARN_RUN` | mine, from this session; meant `BS:CONTENT:SCENES` |
+| `BS:PROP:OPEN_BARN` | mine, from this session; the barn lives in `BS:BUILD:TOWN` |
+| `BS:WORLD:AREA_MAP` | **the anchor was genuinely missing** |
+
+The last one mattered. `scripts/area_map.gd` is the single authority on where
+one part of the world ends and the next begins, it carries the reservation rule
+the whole scene system depends on, and it had **no anchor at all** — so the one
+invariant that keeps hand-composed ground from being scattered with procedural
+props was written down nowhere the verifier could check. It has one now
+(78 anchors). Prose in `Docs/` is exempt: a decision log legitimately names a
+retired anchor when recording that it was retired.

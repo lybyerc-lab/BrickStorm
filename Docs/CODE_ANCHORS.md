@@ -122,6 +122,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 ### Content (hand-authored)
 
 - `[BS:CONTENT:HOG_LOT]` — `scripts/set_piece.gd` — the authored farmyard; three collectibles, three verbs
+- `[BS:CONTENT:SCENES]` — `scripts/set_piece.gd` — the drive-in, the barn run and the cow field, dropped along the corridor
 - `[BS:CONTENT:BUILD_STEPS]` — `scripts/set_piece.gd` — the staircase the build assembles
 - `[BS:CONTENT:SET_PIECE]` — `scripts/main.gd` — placement and wiring of the authored piece
 - `[BS:CONTENT:ABILITY_GATE]` — `scripts/structure.gd` — heavy scenery only Bill can shift
@@ -153,6 +154,7 @@ The two non-negotiables from `Docs/NORTH_STAR.md`, enforced in code.
 - `[BS:RENDER:PLASTIC]` — `scripts/brick_lib.gd` — the one definition of what plastic looks like, and why the fresnel term is bricks-only
 - `[BS:WORLD:ENVIRONMENT]` — `scripts/main.gd` — sky, light, fog
 - `[BS:WORLD:GROUND]` — `scripts/main.gd` — ground plane and crop squares
+- `[BS:WORLD:AREA_MAP]` — `scripts/area_map.gd` — the corridor's division into sub-areas, and the reservation that keeps authored ground authored
 - `[BS:WORLD:AREA_STATE]` — `scripts/main.gd` — the sub-area's intensity state, and the ambience bed that follows it
 - `[BS:WORLD:NEAR_CACHE]` — `scripts/main.gd` — cached short list of nearby structures for the per-frame hot loops
 - `[BS:WORLD:STREAM]` — `scripts/main.gd` — corridor blocks spawn ahead of the storm and are reclaimed behind

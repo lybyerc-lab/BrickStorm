@@ -755,6 +755,54 @@ static func stud_visual(color: Color) -> Node3D:
 
 # Minifig, built the way a minifig is actually built.
 # [BS:BUILD:STUD:END]
+# The cow, as a visual. It lives here rather than inside main's _make_cow so
+# that anything which needs to SHOW a cow - the game, a scene probe - draws the
+# same animal. See BS:WORLD:CRITTERS for the rules that protect it.
+static func cow_visual() -> Node3D:
+	var v := Node3D.new()
+	var body := brick_visual(3, 2, 0.6, C_WHITE)
+	body.position = Vector3(0, 0.75, 0)
+	v.add_child(body)
+	var head := brick_visual(1, 1, 0.5, C_WHITE, false)
+	head.position = Vector3(0.85, 0.85, 0)
+	v.add_child(head)
+	for sx in [-0.45, 0.45]:
+		for sz in [-0.28, 0.28]:
+			var leg := brick_visual(1, 1, 0.5, C_BLACK, false)
+			leg.position = Vector3(sx, 0.25, sz)
+			v.add_child(leg)
+	var patch := brick_visual(1, 1, 0.12, C_BLACK, false)
+	patch.position = Vector3(-0.2, 1.06, 0.2)
+	v.add_child(patch)
+	# HOLSTEIN PATCHES ON THE FLANKS, not only the spine. Rendered in the
+	# pasture, a cow with one patch on its back read as a small white table:
+	# from a road, and from the air with the funnel throwing it past at head
+	# height, what a cow shows is its SIDE. The flying cow is the single most
+	# quoted image the film has, so it has to be recognisable in silhouette at
+	# fifty metres, not only in a close-up.
+	for sz in [-1.0, 1.0]:
+		var flank := brick_visual(2, 1, 0.34, C_BLACK, false)
+		flank.position = Vector3(-0.12, 0.86, sz * 0.5)
+		flank.scale = Vector3(1.0, 1.0, 0.12)
+		v.add_child(flank)
+	# Muzzle and ears: the head was a plain white cube, which is what made the
+	# animal read as furniture end-on.
+	var muzzle := brick_visual(1, 1, 0.26, C_TAN, false)
+	muzzle.position = Vector3(1.14, 0.80, 0)
+	muzzle.scale = Vector3(0.4, 1.0, 0.8)
+	v.add_child(muzzle)
+	for sz2 in [-1.0, 1.0]:
+		var ear := brick_visual(1, 1, 0.14, C_BLACK, false)
+		ear.position = Vector3(0.80, 1.06, sz2 * 0.24)
+		ear.scale = Vector3(0.4, 1.0, 0.5)
+		v.add_child(ear)
+	var tail := brick_visual(1, 1, 0.55, C_BLACK, false)
+	tail.position = Vector3(-0.80, 0.72, 0)
+	tail.scale = Vector3(0.24, 1.0, 0.24)
+	v.add_child(tail)
+	return v
+
+
 # ============================================================================
 # [BS:BUILD:MINIFIG]
 # Purpose: Minifig assembly, built the way a minifig is actually built.
@@ -788,7 +836,7 @@ static func minifig(shirt: Color, legs: Color, hair: Color, skin: Color = Color(
 	# A minifig cannot bend a knee or an elbow - the parts are rigid - so ALL
 	# of a walk's character comes from WHERE THE MOTION ORIGINATES, and a flat
 	# rig with the torso, the shoulders and the hips as siblings has nothing to
-	# lead from. See BS:PLAYER:GAIT.
+	# lead from. See BS:PLAYER:WALK_CYCLE.
 	var pelvis := Node3D.new()
 	pelvis.name = "Pelvis"
 	pelvis.position = Vector3(0, hip_y, 0)

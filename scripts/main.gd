@@ -10,6 +10,13 @@ const STUD_GOAL := 3500
 const TRUE_CHASER := 9000
 const MAX_LOOSE := 110
 const TEAR_BUDGET := 5
+# What six player smashes on a dedicated silo must remove. MEASURED: with the
+# gate awaiting process frames it returns 7 every single run. Before that it
+# returned 2, 6, 1, 1 and 0 on consecutive runs of identical code, so the old
+# "> 0" test was the only threshold the noise allowed. 5 leaves room for a silo
+# rebuilt at a different granularity while still catching a smash that has
+# stopped connecting, which reads as 0 or 1.
+const SMASH_TORN_MIN := 5
 const BRICK_LIFETIME := 6.0
 # How long a brick the player knocked loose flies before it becomes studs.
 # Long enough to see it come off, short enough that the payout belongs to
@@ -80,6 +87,17 @@ var _amb: AudioStreamPlayer3D = null
 const STREAM_AHEAD := 190.0
 const STREAM_BEHIND := 95.0
 const CORRIDOR_HALF_WIDTH := 46.0
+# How far apart the hand-composed scenes sit, and how much corridor each one
+# reserves. Before this there was exactly ONE authored area in the game and it
+# was at the start, so a player never met a composed space again however long
+# they ran - which is the last piece of the linearity problem as well as the
+# "what world am I in" one. See BS:CONTENT:SCENES.
+const SCENE_EVERY := 165.0
+const SCENE_DEPTH := 46.0
+# How far into its reserved slot a scene's origin sits. Everything a scene puts
+# BEHIND its origin - the truck you start beside, the fences that funnel you in
+# - has to fit in this, or it spills into whatever the streamer built next door.
+const SCENE_LEAD := 8.0
 
 var score: int = 0
 var phase: int = Phase.LOOT
@@ -98,6 +116,19 @@ var capture_mode: bool = false
 var _capture_at: Array = [5.0, 11.0, 17.0, 23.0, 29.0]
 var _capture_i: int = 0
 var _capture_dir: String = "/home/user/brickstorm_shots"
+var _scene_built: Dictionary = {}
+var _next_scene_at: float = 0.0
+var _scene_n: int = 0      # reservations made (runs ahead of the frontier)
+var _scene_i: int = 0      # scenes actually dressed (drives which one is next)
+# Every brick ever removed, by the funnel or by the player. Counted as it
+# happens, because anything derived from the live structure list undercounts
+# by however much the storm has already left behind.
+var _torn_ever: int = 0
+# How far apart the authored scenes go. A var rather than the constant so a
+# measurement run can turn them off with --noscenes and compare both arms from
+# ONE build, instead of editing a constant between the two sets and hoping
+# nothing else moved.
+var _scene_every: float = SCENE_EVERY
 var _closeup: bool = false
 var _camera_locked: bool = false
 var playthrough: bool = false
@@ -130,6 +161,8 @@ func _ready() -> void:
 		randomize()
 	capture_mode = args.has("--capture")
 	playthrough = args.has("--playthrough")
+	if args.has("--noscenes"):
+		_scene_every = 1.0e9
 	probe_mode = args.has("--probe")
 	demo_mode = args.has("--demo") or args.has("--selftest") or capture_mode or playthrough
 
@@ -342,11 +375,28 @@ func _stream_world(delta: float) -> void:
 		return
 	_stream_t = 0.4
 
+	# Reserve the next hand-composed scene well ahead of the frontier, so the
+	# map has claimed it before the streamer gets there. reserve() only marks
+	# the corridor; the dressing happens below, once the area actually exists.
+	if _next_scene_at > 0.0 and areamap.frontier + 240.0 > _next_scene_at:
+		areamap.reserve(_next_scene_at, SCENE_DEPTH, "SCENE%d" % _scene_n)
+		_scene_n += 1
+		_next_scene_at += _scene_every
+
 	# The map decides where one area ends and the next begins, and it never
 	# hands an AUTHORED area to the populator. That reservation used to be
 	# open-coded arithmetic here against a magic Z.
 	var front := tornado.funnel_pos().z + STREAM_AHEAD
 	areamap.ensure_ahead(front, _populate_area)
+
+	# Dress any authored area the map has claimed but nobody has built yet.
+	# Doing it here rather than through ensure_ahead's populate callback keeps
+	# the reservation rule intact - populate is still never handed an authored
+	# area, which is the whole point of BS:WORLD:AREA_MAP.
+	for a in areamap.areas:
+		if a.kind == SubArea.Kind.AUTHORED and not _scene_built.has(a.id):
+			_scene_built[a.id] = true
+			_build_scene(a)
 
 	# Retire whole areas rather than testing every structure every pass. The
 	# map re-homes anything the funnel has thrown ahead of the cutoff.
@@ -361,6 +411,32 @@ func _stream_world(delta: float) -> void:
 		if not is_instance_valid(st2) or st2.is_queued_for_deletion():
 			structures.remove_at(i)
 		i -= 1
+
+
+# One hand-composed scene, chosen in rotation so a long run meets all of them
+# and never the same one twice running.
+func _build_scene(a: SubArea) -> void:
+	var o := Vector3(0, 0, a.z0 + SCENE_LEAD)
+	var sc: Dictionary = {}
+	# Rotate on a counter of our own. Deriving the turn from _scene_built.size()
+	# worked only because that dictionary happens to be pre-seeded with two
+	# entries; adding a third pre-seed would silently have reordered the whole
+	# level.
+	match _scene_i % 3:
+		0: sc = SetPiece.drive_in(o)
+		1: sc = SetPiece.barn_run(o)
+		_: sc = SetPiece.cow_field(o)
+	_scene_i += 1
+	for st in sc["structures"]:
+		_add_structure(st)
+	for p in sc.get("cows", []):
+		var cow := _make_cow()
+		critter_root.add_child(cow)
+		cow.global_position = p + Vector3(0, 0.1, 0)
+	# A composed space reads from further back, like the hog lot.
+	a.cam_back_bias = 4.0
+	a.cam_height_bias = 2.0
+	_log_event("SCENE", "%s at z=%.0f" % [a.id, a.z0])
 
 
 func _rng(n: int) -> float:
@@ -528,22 +604,8 @@ func _make_cow() -> RigidBody3D:
 	cs.position = Vector3(0, 0.7, 0)
 	cow.add_child(cs)
 
-	var v := Node3D.new()
-	var bodyb := BrickLib.brick_visual(3, 2, 0.6, BrickLib.C_WHITE)
-	bodyb.position = Vector3(0, 0.75, 0)
-	v.add_child(bodyb)
-	var headb := BrickLib.brick_visual(1, 1, 0.5, BrickLib.C_WHITE, false)
-	headb.position = Vector3(0.85, 0.85, 0)
-	v.add_child(headb)
-	for sx in [-0.45, 0.45]:
-		for sz in [-0.28, 0.28]:
-			var leg := BrickLib.brick_visual(1, 1, 0.5, BrickLib.C_BLACK, false)
-			leg.position = Vector3(sx, 0.25, sz)
-			v.add_child(leg)
-	var patch := BrickLib.brick_visual(1, 1, 0.12, BrickLib.C_BLACK, false)
-	patch.position = Vector3(-0.2, 1.06, 0.2)
-	v.add_child(patch)
-	cow.add_child(v)
+	# One definition of what a cow looks like, shared with the scene probe.
+	cow.add_child(BrickLib.cow_visual())
 	return cow
 
 
@@ -581,6 +643,11 @@ func _spawn_set_piece(origin: Vector3) -> void:
 	# populator, which is the whole of the rule that used to be open-coded
 	# arithmetic in the streamer against a magic Z.
 	_sp_area = areamap.reserve(origin.z - 10.0, 42.0, "HOG_LOT")
+	# The hog lot dresses itself below. Marking it built stops _build_scene
+	# putting a drive-in on top of it, and starts the scene cadence clear of it.
+	_scene_built["HOG_LOT"] = true
+	_scene_built["START"] = true
+	_next_scene_at = origin.z + 42.0 + _scene_every
 	# The one place in the game with a hand-authored camera. The yard is a
 	# composition and it only reads from further back and a little higher; the
 	# automatic camera frames a minifig, which is right everywhere else.
@@ -1089,6 +1156,7 @@ func _do_smash() -> void:
 			continue
 		var strength := Structure.HEAVY_STRENGTH if player.character == Player.Character.BILL else 1.0
 		var bodies := st.tear(p, reach, debris_root, 10 - hit, strength, Structure.SMASH_BITE)
+		_torn_ever += bodies.size()
 		for b in bodies:
 			var away: Vector3 = (b.global_position - p).normalized()
 			b.apply_central_impulse((away + Vector3.UP * 0.9) * 6.5 * b.mass)
@@ -1255,6 +1323,7 @@ func _tear_with_funnel() -> void:
 		if s.global_position.distance_to(c) > tornado.damage_radius + 26.0:
 			continue
 		var bodies := s.tear(c, tornado.damage_radius, debris_root, budget)
+		_torn_ever += bodies.size()
 		budget -= bodies.size()
 		for b in bodies:
 			var out: Vector3 = b.global_position - c
@@ -1650,7 +1719,8 @@ func _dump_playthrough() -> void:
 	f.store_line("---- summary ----")
 	f.store_line("duration        %.1f s" % _elapsed)
 	f.store_line("final score     %d" % score)
-	f.store_line("bricks torn     %d" % _total_torn())
+	f.store_line("bricks torn     %d  (live window only - see _torn_ever)" % _total_torn())
+	f.store_line("BRICKS DESTROYED %d  (cumulative, funnel + player)" % _torn_ever)
 	f.store_line("phase reached   %d" % phase)
 	f.store_line("true chaser     %s" % str(true_chaser_earned))
 	f.store_line("corridor z      %.0f m travelled" % (tornado.funnel_pos().z + 24.0))
@@ -1912,18 +1982,33 @@ func _run_selftest() -> void:
 		fails.append("could not leave the vehicle")
 
 	# --- 2. player smash --------------------------------------------------
-	await get_tree().physics_frame
+	# PROCESS frames, not physics frames. _do_smash reads the near-structure
+	# cache, and that cache is refreshed in _process; awaiting physics_frame
+	# decoupled the gate from the thing it depends on. At 60Hz physics against
+	# the 8fps this renders at headless, six physics frames are 0.1s, in which
+	# _process may not run at all - so the gate was measuring whether a frame
+	# happened to interleave. It read smash_torn of 2, 6, 1, 1 and then 0 on
+	# consecutive runs of identical code, and the 0 failed the build. A gate
+	# that flakes teaches everyone to re-run it, which is worse than not having
+	# it. See BS:WORLD:NEAR_CACHE.
+	await get_tree().process_frame
 	var smash_target := PropBuilder.silo(Vector3(340, 0, 0))
 	_add_structure(smash_target)
 	player.global_position = Vector3(340, 0.4, -2.2)  # beside a dedicated silo
+	await get_tree().process_frame
 	await get_tree().physics_frame
 	var torn_before_smash := _total_torn()
 	for i in range(6):
 		_do_smash()
+		await get_tree().process_frame
 		await get_tree().physics_frame
 	var smash_torn := _total_torn() - torn_before_smash
-	if smash_torn <= 0:
-		fails.append("player SMASH tore nothing")
+	# Six smashes on a dedicated silo must take a real bite, not one brick.
+	# SMASH_TORN_MIN is measured, not guessed - see the run below the fix.
+	if smash_torn < SMASH_TORN_MIN:
+		fails.append("six player SMASHes tore %d bricks off a silo - under %d"
+			% [smash_torn, SMASH_TORN_MIN]
+			+ " the smash is not connecting, however green this looks")
 
 	# --- 3. jump ----------------------------------------------------------
 	# Park the funnel well away first: a lingering tumble from the smash test
@@ -2231,7 +2316,7 @@ func _run_selftest() -> void:
 		"silo": [BrickLib.PART_ROUND, BrickLib.PART_CONE],
 		"water_tower": [BrickLib.PART_ROUND, BrickLib.PART_CONE, BrickLib.PART_TILE],
 		"tree": [BrickLib.PART_ROUND, BrickLib.PART_CONE],
-		# Barbed wire on round posts, not pointed pickets - see BS:BUILD:PLAINS.
+		# Barbed wire on round posts, not pointed pickets - see BS:BUILD:TOWN.
 		"fence": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
 		"power_line": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
 		"grain_elevator": [BrickLib.PART_ROUND, BrickLib.PART_TILE],
@@ -2452,6 +2537,80 @@ func _run_selftest() -> void:
 		fails.append("the storm's pace only varies by %.2f - that is a constant"
 			% (pace_hi - pace_lo) + " speed, and the corridor reads as a treadmill")
 
+	# --- 4b7. the authored scenes are built, bounded and open -------------
+	# A set piece is the one part of the world nobody generates twice, so a
+	# scene that quietly stops building itself would never show up as a crash -
+	# the corridor would just go back to being procedural and nobody would
+	# notice for a week. This asserts each scene still HAS content, that the
+	# content fits the slot the area map reserves for it, and - for the barn -
+	# that the thing you are meant to run through is still open.
+	# See BS:CONTENT:SCENES.
+	var scenes := {
+		"drive_in": SetPiece.drive_in(Vector3.ZERO),
+		"barn_run": SetPiece.barn_run(Vector3.ZERO),
+		"cow_field": SetPiece.cow_field(Vector3.ZERO),
+	}
+	for sname in scenes:
+		var sdict: Dictionary = scenes[sname]
+		var sstructs: Array = sdict["structures"]
+		var sparts := 0
+		for sst in sstructs:
+			sparts += sst.entries.size()
+			for se in sst.entries:
+				var wp: Vector3 = sst.position + Basis.from_euler(sst.rotation) * se["pos"]
+				# The slot the map reserves runs [z0, z0 + SCENE_DEPTH] and the
+				# scene's origin sits SCENE_LEAD into it, so a part may reach
+				# SCENE_LEAD back and SCENE_DEPTH - SCENE_LEAD forward before it
+				# is outside its own area and overlapping the next one.
+				if wp.z < -SCENE_LEAD or wp.z > SCENE_DEPTH - SCENE_LEAD:
+					fails.append("scene %s puts a part at z=%.1f, outside its"
+						% [sname, wp.z]
+						+ " %.0fm slot - it will overlap the next area" % SCENE_DEPTH)
+					break
+				if absf(wp.x) > CORRIDOR_HALF_WIDTH:
+					fails.append("scene %s puts a part at x=%.1f, outside the"
+						% [sname, wp.x] + " corridor")
+					break
+		if sstructs.size() < 10 or sparts < 150:
+			fails.append("scene %s built %d structures / %d parts - a set piece"
+				% [sname, sstructs.size(), sparts]
+				+ " that thin is not worth reserving ground for")
+		for sst2 in sstructs:
+			sst2.queue_free()
+	# The barn is the only prop in the game whose POINT is its empty middle.
+	# Sample the centreline end to end at running height; if any part of the
+	# barn contains one of those points, the tunnel has been closed and the
+	# scene is a wall with hay behind it.
+	var tunnel := PropBuilder.open_barn(Vector3.ZERO, 0.0)
+	var blocked := 0
+	for i in range(41):
+		var zc := lerpf(-9.0, 9.0, float(i) / 40.0)
+		for yc in [0.6, 1.8, 3.0]:
+			var sample := Vector3(0.0, yc, zc)
+			for te in tunnel.entries:
+				var local: Vector3 = Basis.from_euler(te["rot"]).inverse() * (sample - te["pos"])
+				var hx: float = float(te["sw"]) * BrickLib.STUD * 0.5
+				var hy: float = float(te["h"]) * 0.5
+				var hz: float = float(te["sd"]) * BrickLib.STUD * 0.5
+				if absf(local.x) <= hx and absf(local.y) <= hy and absf(local.z) <= hz:
+					blocked += 1
+					break
+	if blocked > 0:
+		fails.append("the barn's centreline is blocked at %d of 123 sample points"
+			% blocked + " - the barn in BS:BUILD:TOWN is not open, so"
+			+ " BS:CONTENT:SCENES' barn run is a dead end")
+	# ...and it has to be a tunnel, not an arch: deep enough that a player
+	# inside it is genuinely inside something.
+	var tmin := Vector3(1e9, 1e9, 1e9)
+	var tmax := -tmin
+	for te2 in tunnel.entries:
+		tmin = tmin.min(te2["pos"])
+		tmax = tmax.max(te2["pos"])
+	if tmax.z - tmin.z < 2.0 * (tmax.x - tmin.x):
+		fails.append("the barn is %.1fm deep and %.1fm wide - under 2:1 it reads"
+			% [tmax.z - tmin.z, tmax.x - tmin.x] + " as a gateway, not a barn")
+	tunnel.queue_free()
+
 	# --- 4c. one definition of plastic, and ambient from the sky ----------
 	# Structure's MultiMesh batch material is what every building in the game
 	# actually draws through; BrickLib.mat() covers the minifig and loose
@@ -2666,6 +2825,12 @@ func _run_selftest() -> void:
 # [BS:QA:SELFTEST:END]
 
 
+# Torn bricks among the structures that are STILL LIVE. This is a snapshot of
+# the corridor window, NOT a count of destruction: a structure retired behind
+# the storm is freed and takes its torn_count with it. Fine for the self-test,
+# which compares it either side of one action seconds apart; wrong for a
+# 200-second round, where most of what was torn has already been reclaimed.
+# Use _torn_ever for "how much came apart". See BS:QA:PLAYTHROUGH.
 func _total_torn() -> int:
 	var n := 0
 	for s in structures:

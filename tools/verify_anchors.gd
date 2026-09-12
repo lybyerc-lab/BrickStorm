@@ -3,7 +3,12 @@
 # Checks that Docs/CODE_ANCHORS.md and the source agree, in BOTH directions:
 # every anchor in the code is registered, every registered anchor exists in the
 # code and in the file the registry claims, every start marker has exactly one
-# matching :END, no anchor is used twice, and no anchor nests inside another.
+# matching :END, no anchor is used twice, no anchor nests inside another, and
+# every CROSS-REFERENCE in the code - a comment saying "see" and then an
+# anchor name - names an anchor that is really there. That last one was added after four comments were found pointing
+# at anchors that had been folded into their parents months earlier - the
+# reference rots silently, because the thing it names simply is not searched
+# for by anything.
 #
 # WHAT THIS CANNOT DO, stated plainly because pretending otherwise is how a
 # project ends up with checks that only ever pass: this verifies STRUCTURE. It
@@ -42,6 +47,14 @@ func _initialize() -> void:
 		if not registered.has(anchor):
 			_errors.append("in code but NOT REGISTERED: [%s] (%s) - add it to %s"
 				% [anchor, found[anchor], REGISTRY])
+
+	# Cross-references. Prose in Docs may legitimately name a retired anchor
+	# ("we folded X into Y"), so only CODE is held to this.
+	var refs := _scan_references()
+	for r in refs:
+		if not registered.has(r):
+			_errors.append("dangling reference to [%s] in %s - no such anchor"
+				% [r, refs[r]])
 
 	print("")
 	print("anchor registry : %d" % registered.size())
@@ -140,3 +153,38 @@ func _scan_one(path: String, rel: String, re_start: RegEx, re_end: RegEx, out: D
 
 	if open_anchor != "":
 		_errors.append("%s: [%s] opened line %d and never closed" % [rel, open_anchor, open_line])
+
+
+# Every mention of an anchor name that is NOT the anchor's own start or end
+# marker: "see BS:STORM:PATH" in a comment, a name inside a failure message.
+# Returns anchor -> "file:line, file:line" so a fix has somewhere to go.
+func _scan_references() -> Dictionary:
+	var out: Dictionary = {}
+	var re_ref := RegEx.new()
+	re_ref.compile("BS:[A-Z0-9_]+:[A-Z0-9_]+(?::END)?")
+	var re_marker := RegEx.new()
+	re_marker.compile("^(?:#|//)\\s*\\[BS:[A-Z0-9_]+:[A-Z0-9_]+(?::END)?\\]\\s*$")
+
+	for dir_path in SCAN_DIRS:
+		var d := DirAccess.open(dir_path)
+		if d == null:
+			continue
+		for fname in d.get_files():
+			if not (fname.ends_with(".gd") or fname.ends_with(".gdshader")
+					or fname.ends_with(".gdshaderinc")):
+				continue
+			var rel := "%s/%s" % [dir_path.replace("res://", ""), fname]
+			var f := FileAccess.open("%s/%s" % [dir_path, fname], FileAccess.READ)
+			if f == null:
+				continue
+			var n := 0
+			while not f.eof_reached():
+				var line := f.get_line()
+				n += 1
+				if re_marker.search(line) != null:
+					continue
+				for m in re_ref.search_all(line):
+					var a := m.get_string(0).trim_suffix(":END")
+					var where := "%s:%d" % [rel, n]
+					out[a] = where if not out.has(a) else "%s, %s" % [out[a], where]
+	return out

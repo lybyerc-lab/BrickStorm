@@ -31,7 +31,7 @@ func _run() -> void:
 	sky.sky_material = sm
 	e.sky = sky
 	# Matched to the game's own environment, so what this shows is what the
-	# game draws. See BS:RENDER:LOOK in main.gd.
+	# game draws. See BS:WORLD:ENVIRONMENT in main.gd.
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	e.ambient_light_sky_contribution = 1.0
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY

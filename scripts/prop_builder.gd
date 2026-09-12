@@ -375,6 +375,71 @@ static func power_line(from: Vector3, to: Vector3) -> Structure:
 	return st
 
 
+# A barn OPEN AT BOTH ENDS - a tunnel you can drive through. The ordinary barn
+# is closed on all four sides with doors on one face; this one is two side
+# walls and a roof, sized so a pickup clears it. See BS:CONTENT:SCENES.
+static func open_barn(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	var w := 12
+	var d := 30
+	var courses := 10
+	var hw := float(w) * S * 0.5
+	var hd := float(d) * S * 0.5
+	var red := BrickLib.C_RED
+	# Side walls only, and long: at 12 x 30 studs the opening is two and a half
+	# times deeper than it is wide, which is what makes it read as a tunnel you
+	# run THROUGH rather than an arch you step past. The first pass was 12 x 20
+	# and rendered as a gateway - the field beyond filled the whole opening.
+	_wall(st, Vector3(-hw, 0, -hd), Vector3(0, 0, 1), d, courses, red)
+	_wall(st, Vector3(hw, 0, -hd), Vector3(0, 0, 1), d, courses, red)
+	# White trim: a band right round the top, sides and both open ends, so the
+	# ends read as a framed DOORWAY. Two earlier tries read wrong head-on - a
+	# band that stopped flush at the opening looked like a white patch stuck to
+	# each corner, and full-height corner boards turned the barn into a gazebo
+	# with two bright columns. Trim that runs horizontally frames the hole;
+	# trim that runs vertically competes with it.
+	var trim_y := float(courses) * H
+	for sx in [-hw, hw]:
+		_wall(st, Vector3(sx, trim_y, -hd), Vector3(0, 0, 1), d, 1,
+			BrickLib.C_WHITE, 4, 2)
+	for sz in [-hd + S, hd - S]:
+		st.add_brick(w + 2, 2, H, BrickLib.C_WHITE,
+			Vector3(0, trim_y + H * 0.5, sz), Vector3.ZERO, false)
+	# The roof runs the other way from a normal barn: its ridge follows the
+	# tunnel, so both ends stay open.
+	_stepped_roof(st, w / 2 + 1, d + 2, float(courses + 1) * H,
+		[[3, H * 1.4], [3, H * 0.55]], red)
+	st.finish()
+	return st
+
+
+# The projection booth and snack bar at a drive-in. Small, square, and the only
+# thing between the cars and the road.
+static func booth(pos: Vector3, yaw: float = 0.0) -> Structure:
+	var st := Structure.new()
+	st.position = pos
+	st.rotation.y = yaw
+	var w := 8
+	var d := 6
+	var hw := float(w) * S * 0.5
+	var hd := float(d) * S * 0.5
+	var body := BrickLib.C_TAN
+	_wall(st, Vector3(-hw, 0, -hd), Vector3(1, 0, 0), w, 5, body)
+	_wall(st, Vector3(-hw, 0, hd), Vector3(1, 0, 0), w, 5, body)
+	_wall(st, Vector3(-hw, 0, -hd), Vector3(0, 0, 1), d, 5, body)
+	_wall(st, Vector3(hw, 0, -hd), Vector3(0, 0, 1), d, 5, body)
+	# The serving window, and a flat felt roof.
+	st.add_brick(4, 1, H * 2.0, BrickLib.C_TRANS, Vector3(0, H * 3.0, -hd - 0.15))
+	st.add_part(BrickLib.PART_TILE, w + 2, d + 2, BrickLib.PLATE_H, BrickLib.C_DGREY,
+		Vector3(0, 5.0 * H + BrickLib.PLATE_H * 0.5, 0))
+	st.add_part(BrickLib.PART_ROUND, 1, 1, 1.4, BrickLib.C_LGREY,
+		Vector3(hw - 0.4, 5.0 * H + 0.7, hd - 0.4), Vector3.ZERO, false)
+	st.finish()
+	return st
+
+
 # A STORM CELLAR: the sloped double doors set into the ground beside a
 # farmhouse. Nothing says tornado country faster, and the film this game is
 # built on opens on a family going down into one. Built, not copied - a cellar
