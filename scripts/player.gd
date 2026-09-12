@@ -210,6 +210,15 @@ func _physics_process(delta: float) -> void:
 	if t != null:
 		wind = t.wind_at(global_position)
 
+	# TICK THE SWING HERE, ahead of every early return below. It used to be
+	# decremented inside _animate_walk, which is unreachable while driving or
+	# tumbling - so smashing and then boarding a truck, or being picked up by
+	# the funnel mid-swing, LATCHED the timer on forever and left the arms
+	# stuck mid-slam for the rest of the round. Moving it inside _animate_walk
+	# "before the early return" fixed the wrong early return.
+	if smash_timer > 0.0:
+		smash_timer = maxf(smash_timer - delta, 0.0)
+
 	if driving != null:
 		_visual_root.visible = false
 		if is_instance_valid(driving):
@@ -356,11 +365,6 @@ static func swing_pitch(t: float) -> float:
 
 
 func _animate_walk(delta: float, spd: float) -> void:
-	# Tick the swing BEFORE the rig check. Behind that early return the timer
-	# could never reach zero for a character whose parts had not been cached,
-	# leaving the swing latched on forever.
-	if smash_timer > 0.0:
-		smash_timer = maxf(smash_timer - delta, 0.0)
 	var p: Dictionary = _parts.get(character, {})
 	if p.is_empty():
 		return

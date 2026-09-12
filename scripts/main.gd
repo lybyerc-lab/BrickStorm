@@ -89,6 +89,10 @@ const STREAM_BEHIND := 95.0
 # How far behind the storm the world is still kept for a lagging player. Bounds
 # what a stopped player can make the streamer retain.
 const MAX_TRAIL := 340.0
+# The ground mesh's side length. It follows the player, so it only has to cover
+# the streamed corridor either side of them: STREAM_AHEAD forward and
+# STREAM_BEHIND back, with margin. --selftest asserts the coverage.
+const GROUND_SPAN := 520.0
 const CORRIDOR_HALF_WIDTH := 46.0
 # How far apart the hand-composed scenes sit, and how much corridor each one
 # reserves. Before this there was exactly ONE authored area in the game and it
@@ -127,6 +131,7 @@ var _scene_i: int = 0      # scenes actually dressed (drives which one is next)
 # happens, because anything derived from the live structure list undercounts
 # by however much the storm has already left behind.
 var _torn_ever: int = 0
+var _ground_mi: MeshInstance3D = null
 # How far apart the authored scenes go. A var rather than the constant so a
 # measurement run can turn them off with --noscenes and compare both arms from
 # ONE build, instead of editing a constant between the two sets and hoping
@@ -270,16 +275,29 @@ func _build_ground() -> void:
 	# read AGAINST, and half of every frame was a single flat saturated green.
 	# Pillar 1 now draws the line at smashability, and the ground does not
 	# break. See shaders/ground.gdshader and Docs/NORTH_STAR.md.
+	# THE MESH HAS TO FOLLOW. This was one 420m plane at the origin, never
+	# moved, so it spanned z = -210..210 while a 200-second round carries the
+	# storm past z = 600: about two thirds of every round was played over no
+	# ground mesh at all, with the sky's own ground colour showing through as a
+	# flat olive band - no fields, no section roads, no plough rows. The
+	# comment that the ground is "world-locked and therefore has no edge to run
+	# off" was true of the SHADER and not of the mesh it is painted on.
+	#
+	# Because the shader IS world-locked, sliding the mesh under the player is
+	# invisible: the fields stay exactly where they are in world space. See
+	# tools/edge_probe.gd, which is the render that found this.
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(420, 420)
+	pm.size = Vector2(GROUND_SPAN, GROUND_SPAN)
 	pm.subdivide_width = 4
 	pm.subdivide_depth = 4
-	var mi := MeshInstance3D.new()
-	mi.mesh = pm
+	_ground_mi = MeshInstance3D.new()
+	_ground_mi.mesh = pm
 	var gm := ShaderMaterial.new()
 	gm.shader = load("res://shaders/ground.gdshader")
-	mi.material_override = gm
-	add_child(mi)
+	_ground_mi.material_override = gm
+	# Never culled for being "off screen" while it is the screen.
+	_ground_mi.extra_cull_margin = GROUND_SPAN
+	add_child(_ground_mi)
 
 	# The crop squares are GONE. They were sixteen meshes scattered once within
 	# 150m of the origin while the storm travels 600m, so the back two thirds
@@ -403,6 +421,12 @@ func _stream_world(delta: float) -> void:
 
 	# Retire whole areas rather than testing every structure every pass. The
 	# map re-homes anything the funnel has thrown ahead of the cutoff.
+	# Slide the ground under the player. Cheap, and in the same throttled pass
+	# as everything else that keys off where they are.
+	if _ground_mi != null:
+		_ground_mi.global_position = Vector3(
+			player.global_position.x, 0.0, player.global_position.z)
+
 	# RECLAIM BEHIND THE PLAYER, NOT BEHIND THE STORM. This was
 	# funnel_pos().z - STREAM_BEHIND, so the horizon was tied to the funnel
 	# alone: let the storm pull ahead and the cutoff marched past the player,
@@ -2079,11 +2103,18 @@ func _run_selftest() -> void:
 		if mismatch > 0.05:
 			fails.append("the smash drives the two shoulders %.2f rad apart"
 				% mismatch + " - it is being overwritten by the walk cycle")
-		# ...and it must let go of the rig afterwards.
-		for i in range(int(Player.SMASH_TIME * 61.0) + 8):
+		# ...and it must let go of the rig afterwards. The AUTOPILOT has to be
+		# off for this: --selftest implies demo_mode, and _demo_smash fires
+		# every 0.75s calling _do_smash, which re-arms the swing. The first
+		# version of this check fought it and reported the rig as stuck when
+		# the rig was fine and the test was smashing in the background.
+		var was_demo2 := demo_mode
+		demo_mode = false
+		for i in range(int(Player.SMASH_TIME * 61.0) + 10):
 			await get_tree().physics_frame
 		if player.smash_timer > 0.0:
 			fails.append("the smash swing never ends - the rig is stuck in it")
+		demo_mode = was_demo2
 
 	# --- 3. jump ----------------------------------------------------------
 	# Park the funnel well away first: a lingering tumble from the smash test
@@ -2931,6 +2962,36 @@ func _run_selftest() -> void:
 				+ " further'")
 	player.global_position = keep_player
 	tornado.global_position = keep_storm
+
+	# --- 10. the ground mesh covers what the camera can see ---------------
+	# Two thirds of every round used to be played over NO GROUND MESH: one
+	# 420m plane at the origin, never moved, against a corridor that runs past
+	# z=600. Nothing caught it because nothing rendered the far end of a round
+	# - the capture shots are all taken in the first thirty seconds. See
+	# tools/edge_probe.gd and BS:WORLD:GROUND.
+	# Force one streaming pass first: the follow happens there, and gate 9
+	# above left the player somewhere else. Asserting without this measures a
+	# position my own earlier gate manufactured.
+	_stream_t = -1.0
+	_stream_world(0.016)
+	if _ground_mi == null:
+		fails.append("there is no ground mesh at all")
+	else:
+		var gz: float = _ground_mi.global_position.z
+		var half := GROUND_SPAN * 0.5
+		# It has to reach the far end of what the streamer builds, and back to
+		# the reclaim horizon, from wherever it currently sits.
+		var need_front: float = player.global_position.z + STREAM_AHEAD
+		var need_back: float = player.global_position.z - STREAM_BEHIND
+		if gz + half < need_front or gz - half > need_back:
+			fails.append("the ground mesh spans z %.0f..%.0f but the corridor"
+				% [gz - half, gz + half]
+				+ " runs %.0f..%.0f - the player will see the world end"
+					% [need_back, need_front])
+		# ...and it must actually be following, not pinned at the origin.
+		if absf(gz - player.global_position.z) > GROUND_SPAN:
+			fails.append("the ground mesh is %.0fm from the player - it is not"
+				% absf(gz - player.global_position.z) + " following them")
 
 	var torn := _total_torn()
 	if torn < 10:
