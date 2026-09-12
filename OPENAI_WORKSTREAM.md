@@ -16,22 +16,23 @@ The game is **LEGO: Twister**. `BrickStorm` is only the development codename. Re
 
 ## Current sealed baseline
 
-BrickStorm Foundation **0.4.4** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
+BrickStorm Foundation **0.4.5** is the current byte-authoritative, clean-extracted, Godot-tested OpenAI baseline.
 
-Sealed archive: `brickstorm_foundation_v0_4_4.zip`
+Sealed archive: `brickstorm_foundation_v0_4_5.zip`
 
-SHA-256: `f2318818c2c9ae2431b33acaee8df0ddc69a5aacf89ee344239eb6a23939ffdb`
+SHA-256: `47fe560d9bb95548c9698ab6d16abe0f4defc7f71eb6b0ab267b3c41e9a9172d`
 
 Exact-package verification includes:
 
-- source manifest: **418/418** entries unchanged after clean-extracted testing;
+- source manifest: **424/424** entries unchanged after all clean-extracted testing;
 - source/static release gate;
 - deep audit: **99 GDScripts / 51 scenes / 46 global class_name symbols**;
-- **76/76** behavior contracts;
+- **78/78** behavior contracts;
 - strict-parser negative tests: **10/10**;
+- tornado route QA: PASS;
 - real Godot `4.7.2.stable.official.ed1daf0bf` import/runtime/core/lifecycle/content gates;
 - character LEGO-feel and hybrid-building gates;
-- **phone QA lab and runtime telemetry gate**;
+- phone QA lab and runtime telemetry gate;
 - canonical stud identity;
 - authored opening slice;
 - preserved county-road chase;
@@ -39,50 +40,66 @@ Exact-package verification includes:
 - 600-frame main-scene soak;
 - graphical touch at 1280x720, 1920x1080, and 2400x1080.
 
-At 2400x1080, the `xvfb-run` wrapper could hang after the Godot child had already completed. Final release grading used Xvfb managed directly; the Godot process exited 0, printed `BRICKSTORM TOUCH INPUT ENGINE TEST: PASS`, and emitted no engine error markers.
+During the exact-package aggregate run, the 1920x1080 Xvfb wrapper failed to retain its temporary marker log. The 1920x1080 and 2400x1080 stages were rerun independently against the same exact extraction; both Godot processes exited 0, printed `BRICKSTORM TOUCH INPUT ENGINE TEST: PASS`, and emitted no engine error markers.
 
 The sealed ZIP stored in the LEGO: Twister Library is the byte authority. The GitHub branch remains a curated implementation/history mirror unless a full-repository mirror is separately verified.
 
-## 0.4.4 phone-first QA layer
+## 0.4.5 phone-playtest response
 
-The user has no development PC, so BrickStorm's QA workflow must work from the Android build itself rather than assuming access to the Godot desktop editor.
+The incoming physical-phone authority is **0.4.4 = 3.9/5 overall**. The user's notes were:
 
-0.4.4 adds:
+- cars moved faster than nearby studs could comfortably be collected;
+- the minifig run felt a little slow;
+- the environment felt too linear;
+- the long playing field should follow the demo's stronger level progression: compact spaces stacked beside one another with some elevation.
 
-- a compact in-game **QA** launcher that does not replace or shift the protected movement/action controls;
-- a hidden-by-default **PERF HUD** for live gameplay;
-- a dedicated **QA LABS** scene;
-- real-project MINIFIG, HOUSE, and BUILDABLE benches rather than mock assets;
-- stable visual checkpoint IDs for repeatable screenshots;
-- house opening/receiving-geometry inspection without triggering physics destruction;
-- buildable hopping preview plus real build-sequence triggering;
-- runtime metrics for FPS, frame/process/physics cost, draw and visible-object pressure, active 3D bodies, storm debris, and buildables.
+0.4.5 answers those notes without changing the protected 5/5 truck handling.
 
-Stable checkpoint IDs include:
+### Movement and currency
 
-- `RUN-3Q-01`, `RUN-SIDE-01`, `RUN-FRONT-01`, `RUN-GAME-01`;
-- `HOUSE-ROAD-FRONT-01`, `HOUSE-ROAD-3Q-01`, `HOUSE-FARM-FRONT-01`, `HOUSE-FARM-3Q-01`;
-- `BUILD-FRONT-01`, `BUILD-3Q-01`, `BUILD-GAME-01`.
+- On-foot minifig travel is faster while preserving the accepted little-run/swagger presentation.
+- Studs use stronger vehicle-aware attraction and catch-up so the truck can retain its accepted speed without outrunning reward feedback.
 
-This infrastructure is intended to make Android-only visual QA reproducible and shorten the loop between noticing a defect and reproducing it.
+### Demo-informed exploration topology
 
-## Physical-phone baseline and demo parity
+The exploration rule is now:
 
-The user-supplied 2008 classic brick-adventure demo remains the **5/5 measurement stick**. Automated PASS results prove stability and protected behavior, not visual parity.
+**adjacent compact play spaces + lateral movement + readable elevation + through-flow**.
 
-The most recent completed physical Android full-round rating remains **0.4.2 = 3.8/5**, with the user explicitly saying the round was fun. 0.4.3 corrected the reported torso-swagger and phone-visible house-fit defects but has not yet received a replacement phone score.
+The opening farm now uses:
 
-0.4.4 is measurement infrastructure. It **does not receive an automatic demo-parity increase**.
+- the county road as the low navigation datum;
+- a raised equipment-yard room on the east side;
+- a raised barn-yard room on the west side;
+- separate entrance and exit ramps through both raised rooms;
+- story collectibles and reward arcs that move laterally and vertically through those spaces;
+- elevation-safe sensor-kit bobbing and authored placement.
 
-Current pending-phone working estimates remain:
+This replaces the earlier idea of simply placing optional flat detours beside one long road. Raised rooms are meant to be traversed through, not merely entered and backtracked from.
 
-- visual parity: approximately **3.8/5**;
-- gameplay parity: approximately **3.4/5**;
-- verdict: **ACCEPT AS FOUNDATION ONLY**.
+The high-speed tornado pursuit is intentionally different. Demo archaeology shows the chase-like reference section reduces navigation, interaction, and collision breadth while retaining forward motion, destruction, camera pressure, and pickups. Therefore:
 
-Biggest remaining visual giveaway: authored mesh quality, edge treatment, materials/texture richness, prop specificity, lighting composition, and environmental dressing remain below the shipped reference.
+**exploration sections may stack and branch; spectacle chase sections may deliberately tighten into readable corridors.**
 
-Biggest remaining gameplay giveaway: contextual actions, companion/character-role behavior, semantic feedback density, alternate solutions, secrets, and Story/Free Play depth remain below the reference.
+## Demo parity status
+
+The user-supplied 2008 classic brick-adventure demo remains the **5/5 measurement stick**. Automated PASS results prove stability, not subjective parity.
+
+Incoming completed Android score: **0.4.4 = 3.9/5 overall**.
+
+0.4.5 working estimates pending physical-phone replay:
+
+- visual parity: approximately **3.9/5**;
+- gameplay parity: approximately **3.7/5**;
+- verdict: **ACCEPT AS FOUNDATION ONLY pending device replay**.
+
+Do not convert these estimates into user scores.
+
+Strongest 0.4.5 improvement: the opening exploration space now progresses across adjacent raised rooms rather than reading as one long flat strip.
+
+Biggest remaining visual giveaway: authored asset/material/lighting richness and later long-axis compositions, especially the current Wakita presentation, remain below the shipped reference.
+
+Biggest remaining gameplay giveaway: contextual character roles, companion behavior, semantic feedback density, alternate solutions, secrets, and Story/Free Play depth remain below the reference.
 
 ## Protected wins / regression floors
 
@@ -91,11 +108,12 @@ Biggest remaining gameplay giveaway: contextual actions, companion/character-rol
 - Storm-probe build rhythm: **5/5**
 - Generator/sensor-cage opening: protected reference slice
 - County-road / production InteractionGraph chase: protected
-- 0.4.2 hopping buildable identification: protected
-- 0.4.3 torso swagger: protected
-- 0.4.3 roadside/farmhouse prop nesting: protected
+- hopping buildable identification: protected
+- torso/shoulder swagger and little-run presentation: protected
+- roadside/farmhouse prop nesting: protected
 - Wakita objective/checkpoint/camera/tornado-route ownership: protected
-- Canonical stud denomination identity and mobile destruction budgets: protected
+- phone QA harness and runtime telemetry: protected
+- canonical stud denomination identity and mobile destruction budgets: protected
 
 Protected means comparison floor, not museum glass. Improvements are welcome only when the play result clearly remains equal or better.
 
@@ -113,4 +131,4 @@ Every meaningful pass reports:
 
 ## Release discipline
 
-A candidate is not sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and source-manifest hashes remain unchanged after testing. Physical Android remains authoritative for rendering, audio, performance, thermals, thumb feel, character swagger, prop nesting, QA usability, and overall classic-LEGO impression.
+A candidate is not sealed until source validation passes, real Godot 4.7.2 tests pass, the exact ZIP is clean-extracted and retested, and source-manifest hashes remain unchanged after testing. Physical Android remains authoritative for rendering, audio, performance, thermals, thumb feel, movement speed, stud pacing, level progression, and overall classic-LEGO impression.
